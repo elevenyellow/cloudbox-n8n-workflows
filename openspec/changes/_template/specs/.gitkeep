@@ -1,0 +1,6 @@
+# Drop spec deltas here only if the change introduces or modifies a canonical convention.
+# Examples of when to add a delta:
+#   - New required README section for all workflows
+#   - New credential naming rule
+#   - New deployment flag or script behavior
+# If the change is workflow-only with no convention impact, delete the specs/ folder before committing.

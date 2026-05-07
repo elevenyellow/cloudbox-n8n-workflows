@@ -1,5 +1,6 @@
 {
-  "modes": {
+  "$schema": "https://opencode.ai/config.json",
+  "mode": {
     "explore": {
       "description": "Investigate n8n nodes, templates, existing workflows",
       "agent": "general",
