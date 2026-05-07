@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "n8n": {
+      "command": "npx",
+      "args": ["-y", "n8n-mcp@1.0.0"],
+      "env": {
+        "N8N_API_URL": "https://n8n.rola.dev/api/v1",
+        "N8N_API_KEY": "${N8N_API_KEY}"
+      }
+    }
+  }
+}

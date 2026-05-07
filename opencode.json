@@ -1,0 +1,29 @@
+{
+  "modes": {
+    "explore": {
+      "description": "Investigate n8n nodes, templates, existing workflows",
+      "agent": "general",
+      "instructions": "Read-only mode. Use n8n-mcp to search nodes, list workflows, fetch templates. Do NOT modify workflows or deploy."
+    },
+    "plan": {
+      "description": "Create change proposal for new workflow",
+      "agent": "spec-writer",
+      "instructions": "Create OpenSpec change in openspec/changes/<id>/ with proposal.md, design.md, tasks.md. Write ONLY inside openspec/."
+    },
+    "build": {
+      "description": "Implement workflow JSON, test locally",
+      "agent": "general",
+      "instructions": "Create workflow.json in workflows/<name>/. Use n8n-mcp to assist. Test via n8n UI before deploying."
+    },
+    "deploy": {
+      "description": "Deploy workflow to n8n via API, validate",
+      "agent": "general",
+      "instructions": "Run deploy-workflow.sh. Verify workflow appears in UI. Test execution. NEVER deploy without testing in UI first."
+    },
+    "archive": {
+      "description": "Archive change, update canonical specs",
+      "agent": "general",
+      "instructions": "Move change to archive/, update openspec/specs/. Commit with conventional commit message."
+    }
+  }
+}

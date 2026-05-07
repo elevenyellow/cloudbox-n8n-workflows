@@ -1,0 +1,20 @@
+version: 1
+project: cloudbox-n8n-workflows
+description: n8n workflow development and deployment
+
+modes:
+  explore: Read-only investigation of n8n nodes, templates, workflows
+  plan: Create change proposal for new workflow
+  build: Implement workflow JSON, test locally
+  deploy: Deploy workflow to n8n via API
+  archive: Archive change, update canonical specs
+
+conventions:
+  - Workflows as JSON (n8n native format)
+  - One workflow per directory in workflows/
+  - Each workflow has README.md documenting purpose, credentials, deployment
+  - Deploy via scripts/deploy-workflow.sh (never manual API calls)
+  - Test in UI before deploying to production
+  - Credentials referenced by name (not inline in JSON)
+  - Git is source of truth for workflow logic
+  - Restic backs up runtime state (execution history, credentials)
