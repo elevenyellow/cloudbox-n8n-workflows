@@ -62,7 +62,7 @@ source .env
 
 **Testing**:
 
-1. **Activate workflow**: https://n8n.rola.dev/workflow/qRbRZuPRcRdZpWQC
+1. **Activate workflow**: https://n8n.rola.dev/workflow/2jJ9NF5qVJG326C6
 2. **Test cases**:
    - `/competitors` (no topic) → help message "Usage: /competitors <topic>"
    - `/competitors n8n alternatives` → report with ≥3 competitors, URLs, positioning, pricing, features
