@@ -25,33 +25,15 @@
 
 - `Telegram account`: Telegram Bot API credential (shared with `telegram-openrouter-chat`).
 - `OpenRouter account`: OpenRouter credential.
-- **Environment variable**: `TAVILY_API_KEY` must be set in n8n environment (see Deployment section below).
+- **Tavily API key**: Must be configured directly in the "Tavily Search Tool" Code node (line 14). Replace `YOUR_TAVILY_API_KEY` with your actual key. n8n Code tools don't support environment variables directly.
 - ~~`GitHub PAT: Fragua read`~~: Not needed in current build (playbook copied locally).
 
 **Deployment**:
 
-**Prerequisites**: Set `TAVILY_API_KEY` environment variable in n8n.
-
-Option 1 - Use setup script (recommended):
-```bash
-# On n8n server (rola.dev)
-sudo bash /path/to/scripts/setup-n8n-env.sh
-# Follow the instructions to add TAVILY_API_KEY to your n8n environment
-```
-
-Option 2 - Manual setup:
-- **Docker**: Add to `docker-compose.yml` environment section:
-  ```yaml
-  environment:
-    - TAVILY_API_KEY=${TAVILY_API_KEY}
-  ```
-  Then add to `.env`: `TAVILY_API_KEY=your_key_here` and run `docker-compose up -d`
-
-- **Systemd**: Add to service file `[Service]` section:
-  ```
-  Environment="TAVILY_API_KEY=your_key_here"
-  ```
-  Then run `systemctl daemon-reload && systemctl restart n8n`
+**Prerequisites**: 
+1. Get a Tavily API key from https://tavily.com
+2. Open the workflow JSON and find the "Tavily Search Tool" node
+3. Replace `YOUR_TAVILY_API_KEY` with your actual key (line 14 in the jsCode)
 
 **Deploy workflow**:
 ```bash
@@ -60,9 +42,11 @@ source .env
 ./scripts/deploy-workflow.sh workflows/research-competitors/workflow.json
 ```
 
+**Note**: The workflow JSON in git has a placeholder `YOUR_TAVILY_API_KEY`. You must replace it before deploying. The deployed version at n8n.rola.dev has the actual dev key configured.
+
 **Testing**:
 
-1. **Activate workflow**: https://n8n.rola.dev/workflow/8xdglWouEBTLBvIw
+1. **Activate workflow**: https://n8n.rola.dev/workflow/lAoSqTNPWcYh2ncE
 2. **Test cases**:
    - `/competitors` (no topic) → help message "Usage: /competitors <topic>"
    - `/competitors n8n alternatives` → report with ≥3 competitors, URLs, positioning, pricing, features
@@ -73,7 +57,7 @@ source .env
 
 - **Version**: v1.0 - Production ready
 - **Model**: Using `openai/gpt-4o` via OpenRouter (switched from `anthropic/claude-sonnet-4.5` due to tool-calling issues).
-- **Tavily API key**: Loaded from `$env('TAVILY_API_KEY')` in n8n Code tool. Dev key configured in `/home/orlando/services/n8n/.env`.
+- **Tavily API key**: Hardcoded in the Code tool (line 14). n8n Code tools don't support `process.env` or `$env()` for accessing environment variables. The key must be replaced directly in the workflow JSON before deployment.
 - **Search depth**: `advanced` (2 API credits per search) - Returns multiple semantically relevant snippets per URL for higher quality, more detailed results. Also fetches 10 results (vs 5 in basic) with 3 chunks per source.
 - **System prompt**: v1.0 uses concise inline instructions (~400 chars) instead of full playbook. Future versions may restore dynamic playbook loading.
 - **Double-reply risk**: `telegram-openrouter-chat` also responds to all text messages. Consider adding a follow-up change to filter slash commands in that workflow, or deactivate it.
@@ -82,6 +66,7 @@ source .env
 - **Error handling**: Failures surface as failed n8n executions (visible in Executions tab). Tavily errors are caught and returned to the AI Agent as tool output.
 
 **Future improvements** (v2.0):
+- Use n8n credentials system instead of hardcoded API key (requires switching from Code tool to HTTP Request tool or using a Set node to inject credentials)
 - Restore full playbook as system prompt (loaded dynamically from Fragua repo)
 - Add more search tools (Perplexity, Exa, etc.)
 - Add conversation memory for follow-up questions
