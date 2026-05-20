@@ -1,10 +1,10 @@
-# Workflow: Research Competitors
+# Workflow: Research Competitors (v1.0)
 
-**Purpose**: Execute competitor research via Telegram `/competitors <tema>` command, using the `find-competitors.md` playbook from Fragua as system prompt, with Tavily search for real-time web data.
+**Purpose**: Execute competitor research via Telegram `/competitors <tema>` command, using Tavily search for real-time web data and OpenAI GPT-4o for analysis.
 
 **Trigger**: Telegram message event from the configured bot. The workflow responds only to messages starting with `/competitors` and ignores all other messages.
 
-**Pattern**: Playbook-as-prompt — the playbook is loaded dynamically (currently from this repo, can be switched to Fragua GitHub raw URL) and used as the AI Agent's system prompt, ensuring the workflow benefits from playbook improvements without redeployment.
+**Status**: ✅ **Production-ready v1.0** - Deployed and tested with environment variable configuration for API keys.
 
 **Nodes** (12 total):
 
@@ -62,7 +62,7 @@ source .env
 
 **Testing**:
 
-1. **Activate workflow**: https://n8n.rola.dev/workflow/2jJ9NF5qVJG326C6
+1. **Activate workflow**: https://n8n.rola.dev/workflow/p9PMOWD71GsIJR6L
 2. **Test cases**:
    - `/competitors` (no topic) → help message "Usage: /competitors <topic>"
    - `/competitors n8n alternatives` → report with ≥3 competitors, URLs, positioning, pricing, features
@@ -71,12 +71,19 @@ source .env
 
 **Notes**:
 
+- **Version**: v1.0 - Production ready
 - **Model**: Using `openai/gpt-4o` via OpenRouter (switched from `anthropic/claude-sonnet-4.5` due to tool-calling issues).
-- **Tavily API key**: Loaded from `TAVILY_API_KEY` environment variable in n8n. Dev key stored in local `.env` file (not committed).
-- **Playbook source**: Currently loaded from GitHub but NOT used in system prompt (v1.0 uses concise inline instructions instead). Future versions may restore full playbook loading.
+- **Tavily API key**: Loaded from `process.env.TAVILY_API_KEY` in n8n container. Dev key configured in `/home/orlando/services/n8n/.env`.
+- **System prompt**: v1.0 uses concise inline instructions (~400 chars) instead of full playbook. Future versions may restore dynamic playbook loading.
 - **Double-reply risk**: `telegram-openrouter-chat` also responds to all text messages. Consider adding a follow-up change to filter slash commands in that workflow, or deactivate it.
 - **No memory**: Each `/competitors` invocation is independent (no conversation history).
 - **Chunking**: Reports >3500 chars are split into multiple Telegram messages with `[i/N]` prefix.
 - **Error handling**: Failures surface as failed n8n executions (visible in Executions tab). Tavily errors are caught and returned to the AI Agent as tool output.
+
+**Future improvements** (v2.0):
+- Restore full playbook as system prompt (loaded dynamically from Fragua repo)
+- Add more search tools (Perplexity, Exa, etc.)
+- Add conversation memory for follow-up questions
+- Filter slash commands in `telegram-openrouter-chat` to avoid double-reply
 
 **Playbook version**: Copied from Fragua on 2026-05-20 (v0 baseline). See `playbook.md` in this directory.
