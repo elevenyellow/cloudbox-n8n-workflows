@@ -62,7 +62,7 @@ source .env
 
 **Testing**:
 
-1. **Activate workflow**: https://n8n.rola.dev/workflow/vqN8hpYAHIRWarB3
+1. **Activate workflow**: https://n8n.rola.dev/workflow/8xdglWouEBTLBvIw
 2. **Test cases**:
    - `/competitors` (no topic) → help message "Usage: /competitors <topic>"
    - `/competitors n8n alternatives` → report with ≥3 competitors, URLs, positioning, pricing, features
@@ -73,7 +73,7 @@ source .env
 
 - **Version**: v1.0 - Production ready
 - **Model**: Using `openai/gpt-4o` via OpenRouter (switched from `anthropic/claude-sonnet-4.5` due to tool-calling issues).
-- **Tavily API key**: Loaded from `process.env.TAVILY_API_KEY` in n8n container. Dev key configured in `/home/orlando/services/n8n/.env`.
+- **Tavily API key**: Loaded from `$env('TAVILY_API_KEY')` in n8n Code tool. Dev key configured in `/home/orlando/services/n8n/.env`.
 - **Search depth**: `advanced` (2 API credits per search) - Returns multiple semantically relevant snippets per URL for higher quality, more detailed results. Also fetches 10 results (vs 5 in basic) with 3 chunks per source.
 - **System prompt**: v1.0 uses concise inline instructions (~400 chars) instead of full playbook. Future versions may restore dynamic playbook loading.
 - **Double-reply risk**: `telegram-openrouter-chat` also responds to all text messages. Consider adding a follow-up change to filter slash commands in that workflow, or deactivate it.
