@@ -10,13 +10,13 @@
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.2,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "id": "telegram-trigger",
       "credentials": {
-        "telegramApi": {
-          "id": "CiiBlWBOsBWv9yGw",
-          "name": "Telegram account"
-        }
+        "telegramApi": "Telegram account"
       }
     },
     {
@@ -55,8 +55,94 @@
       "name": "Parse Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [460, 300],
+      "position": [
+        460,
+        300
+      ],
       "id": "parse-message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "command-check",
+              "leftValue": "={{ $json.input }}",
+              "rightValue": "/competitors",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Filter /competitors",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        580,
+        300
+      ],
+      "id": "filter-competitors"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "topic-empty",
+              "leftValue": "={{ $json.topic }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Check Topic",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        300
+      ],
+      "id": "check-topic"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "Usage: /competitors <topic>\\n\\nExample: /competitors n8n alternatives",
+        "replyToMessageId": "={{ $json.messageId }}",
+        "additionalFields": {}
+      },
+      "name": "Send Help",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        820,
+        400
+      ],
+      "id": "send-help",
+      "credentials": {
+        "telegramApi": "Telegram account"
+      }
     },
     {
       "parameters": {
@@ -66,7 +152,10 @@
       "name": "Load Playbook",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 300],
+      "position": [
+        820,
+        300
+      ],
       "id": "load-playbook"
     },
     {
@@ -76,18 +165,21 @@
             {
               "id": "systemMessage",
               "name": "systemMessage",
-              "value": "={{ \"Eres un agente que ejecuta el siguiente playbook de investigación de competidores. Dispones de la herramienta tavily_search para buscar fuentes reales. El tema a investigar es: \" + $('Parse Message').item.json.topic + \". Devuelve un informe markdown estructurado, con citas a URLs concretas.\\n\\n---\\n\\n\" + $json.data }}",
+              "value": "={{ \"Eres un agente de investigaci\u00f3n de competidores. Investiga: \" + $('Parse Message').item.json.topic + \".\\n\\nUSA la herramienta tavily_search para buscar informaci\u00f3n real. Consulta m\u00faltiples fuentes (ProductHunt, G2, AlternativeTo, GitHub, etc).\\n\\nDEVUELVE un informe markdown con:\\n- M\u00ednimo 3 competidores\\n- Para cada uno: URL, posicionamiento (1 l\u00ednea), audiencia objetivo, pricing, 2-3 features clave\\n- Cita URLs reales de las fuentes\\n\\nEjecuta 2-3 b\u00fasquedas diferentes para triangular resultados.\" }}",
               "type": "string"
             }
           ]
         },
-        "includeOtherFields": true,
+        "includeOtherFields": false,
         "options": {}
       },
       "name": "Build System Prompt",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [900, 300],
+      "position": [
+        940,
+        300
+      ],
       "id": "build-system-prompt"
     },
     {
@@ -101,12 +193,15 @@
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [1120, 300],
+      "position": [
+        1060,
+        300
+      ],
       "id": "ai-agent"
     },
     {
       "parameters": {
-        "model": "anthropic/claude-sonnet-4.5",
+        "model": "openai/gpt-4o",
         "options": {
           "baseURL": "https://openrouter.ai/api/v1"
         }
@@ -114,53 +209,62 @@
       "name": "OpenRouter Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
-      "position": [1000, 500],
+      "position": [
+        1180,
+        600
+      ],
       "id": "openrouter-chat-model",
       "credentials": {
-        "openRouterApi": {
-          "id": "r9fFwUIm23WiKbGE",
-          "name": "OpenRouter account"
-        }
+        "openRouterApi": "OpenRouter account"
       }
     },
     {
       "parameters": {
         "name": "tavily_search",
-        "description": "Search the web for information about competitors, products, and market positioning. Returns URLs, titles, and content snippets.",
-        "method": "POST",
-        "url": "https://api.tavily.com/search",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "contentType": "application/json",
-        "body": "={\"api_key\": \"YOUR_TAVILY_API_KEY_HERE\", \"query\": \"{{ $json.query }}\", \"max_results\": 5}",
-        "options": {}
+        "description": "Search the web for information. Input is a search query string.",
+        "jsCode": "// Extract query from AI agent input (the agent passes \"query\" as a variable)\nlet searchQuery;\nif (typeof query !== 'undefined' && query) {\n  searchQuery = query;\n} else if ($input.item.json.query) {\n  searchQuery = $input.item.json.query;\n} else if (typeof $input.item.json === 'string') {\n  searchQuery = $input.item.json;\n} else {\n  searchQuery = JSON.stringify($input.item.json);\n}\n\n// Get Tavily API key from environment variable\nconst tavilyApiKey = $env.TAVILY_API_KEY || '';\nif (!tavilyApiKey) {\n  return 'Error: TAVILY_API_KEY environment variable not set';\n}\n\nconst bodyObj = {\n  api_key: tavilyApiKey,\n  query: String(searchQuery),\n  max_results: 5,\n  search_depth: 'basic'\n};\n\nlet result;\ntry {\n  result = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.tavily.com/search',\n    headers: { 'Content-Type': 'application/json' },\n    body: bodyObj,\n    json: true\n  });\n} catch (e) {\n  return 'Tavily error: ' + (e.message || String(e)) + ' | Body sent: ' + JSON.stringify(bodyObj);\n}\n\nconst data = typeof result === 'string' ? JSON.parse(result) : result;\nconst results = data.results || [];\nif (results.length === 0) return 'No results found for query: ' + searchQuery;\n\nreturn results.map(r => 'Title: ' + r.title + '\\nURL: ' + r.url + '\\nContent: ' + r.content).join('\\n---\\n');"
       },
       "name": "Tavily Search Tool",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
-      "position": [1240, 500],
+      "position": [
+        1180,
+        500
+      ],
       "id": "tavily-search-tool"
     },
     {
       "parameters": {
-        "chatId": "={{ $('Parse Message').item.json.chatId }}",
-        "text": "={{ $json.output }}",
+        "jsCode": "const text = $input.item.json.output;\nconst maxChars = 3500;\nconst paragraphs = text.split('\\n\\n');\nconst chunks = [];\nlet currentChunk = '';\n\nfor (const para of paragraphs) {\n  if ((currentChunk + para).length > maxChars && currentChunk.length > 0) {\n    chunks.push(currentChunk.trim());\n    currentChunk = para;\n  } else {\n    currentChunk += (currentChunk ? '\\n\\n' : '') + para;\n  }\n}\nif (currentChunk) chunks.push(currentChunk.trim());\n\nconst chatId = $('Parse Message').item.json.chatId;\nconst messageId = $('Parse Message').item.json.messageId;\n\nreturn chunks.map((chunk, i) => ({\n  json: {\n    chunk: `[${i+1}/${chunks.length}]\\n\\n${chunk}`,\n    index: i + 1,\n    total: chunks.length,\n    chatId: chatId,\n    messageId: messageId\n  }\n}));"
+      },
+      "name": "Split Response Into Chunks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        300
+      ],
+      "id": "split-response-into-chunks"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.chunk }}",
         "additionalFields": {
           "appendAttribution": false,
-          "reply_to_message_id": "={{ $('Parse Message').item.json.messageId }}"
+          "reply_to_message_id": "={{ $json.index === 1 ? $json.messageId : '' }}"
         }
       },
       "name": "Send Telegram Reply",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1340, 300],
+      "position": [
+        1500,
+        300
+      ],
       "id": "send-telegram-reply",
       "credentials": {
-        "telegramApi": {
-          "id": "CiiBlWBOsBWv9yGw",
-          "name": "Telegram account"
-        }
+        "telegramApi": "Telegram account"
       }
     }
   ],
@@ -180,7 +284,37 @@
       "main": [
         [
           {
+            "node": "Filter /competitors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter /competitors": {
+      "main": [
+        [
+          {
+            "node": "Check Topic",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Check Topic": {
+      "main": [
+        [
+          {
             "node": "Load Playbook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help",
             "type": "main",
             "index": 0
           }
@@ -213,6 +347,17 @@
       "main": [
         [
           {
+            "node": "Split Response Into Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Response Into Chunks": {
+      "main": [
+        [
+          {
             "node": "Send Telegram Reply",
             "type": "main",
             "index": 0
@@ -240,6 +385,16 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Send Help": {
+      "main": [
+        []
+      ]
+    },
+    "Send Telegram Reply": {
+      "main": [
+        []
       ]
     }
   },
