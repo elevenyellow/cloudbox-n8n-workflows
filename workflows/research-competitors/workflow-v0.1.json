@@ -1,0 +1,252 @@
+{
+  "name": "Research Competitors v0.1",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ]
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "id": "telegram-trigger",
+      "credentials": {
+        "telegramApi": {
+          "id": "CiiBlWBOsBWv9yGw",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "input",
+              "name": "input",
+              "value": "={{ $json.message?.text || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "chatId",
+              "name": "chatId",
+              "value": "={{ $json.message?.chat?.id }}",
+              "type": "string"
+            },
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "value": "={{ $json.message?.message_id }}",
+              "type": "string"
+            },
+            {
+              "id": "topic",
+              "name": "topic",
+              "value": "={{ $json.message?.text?.replace(/^\\/competitors(?:@\\w+)?\\s*/, '').trim() || $json.message?.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "id": "parse-message"
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/elevenyellow/cloudbox-n8n-workflows/main/workflows/research-competitors/playbook.md",
+        "options": {}
+      },
+      "name": "Load Playbook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "id": "load-playbook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "systemMessage",
+              "name": "systemMessage",
+              "value": "={{ \"Eres un agente que ejecuta el siguiente playbook de investigación de competidores. Dispones de la herramienta tavily_search para buscar fuentes reales. El tema a investigar es: \" + $('Parse Message').item.json.topic + \". Devuelve un informe markdown estructurado, con citas a URLs concretas.\\n\\n---\\n\\n\" + $json.data }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "name": "Build System Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [900, 300],
+      "id": "build-system-prompt"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ \"Investiga competidores para: \" + $('Parse Message').item.json.topic }}",
+        "options": {
+          "systemMessage": "={{ $json.systemMessage }}"
+        }
+      },
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1120, 300],
+      "id": "ai-agent"
+    },
+    {
+      "parameters": {
+        "model": "anthropic/claude-sonnet-4.5",
+        "options": {
+          "baseURL": "https://openrouter.ai/api/v1"
+        }
+      },
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [1000, 500],
+      "id": "openrouter-chat-model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "r9fFwUIm23WiKbGE",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"query\": $json.query, \"max_results\": 5 } }}",
+        "options": {}
+      },
+      "name": "Tavily Search Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [1240, 500],
+      "id": "tavily-search-tool",
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Tavily API: Research"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Message').item.json.chatId }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "reply_to_message_id": "={{ $('Parse Message').item.json.messageId }}"
+        }
+      },
+      "name": "Send Telegram Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1340, 300],
+      "id": "send-telegram-reply",
+      "credentials": {
+        "telegramApi": {
+          "id": "CiiBlWBOsBWv9yGw",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Message": {
+      "main": [
+        [
+          {
+            "node": "Load Playbook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Playbook": {
+      "main": [
+        [
+          {
+            "node": "Build System Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build System Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tavily Search Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
