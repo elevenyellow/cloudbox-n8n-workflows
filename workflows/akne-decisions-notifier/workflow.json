@@ -566,6 +566,277 @@
           "name": "Slack Akne Assistant"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM akne_decision_threads WHERE slack_thread_ts = '{{ $json.item_ts }}'",
+        "options": {}
+      },
+      "id": "lookup-decision-by-reaction",
+      "name": "Lookup Decision by Reaction",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, 600],
+      "credentials": {
+        "postgres": {
+          "id": "dUNmqLlEPiY66wXr",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-decision-id",
+              "leftValue": "={{ $json.decision_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-valid-decision-reaction",
+      "name": "Is Valid Decision?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1320, 600]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/elevenyellow/akne/contents/{{ $json.file_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "id": "fetch-decision-for-resolve",
+      "name": "Fetch Decision for Resolve",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 600],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://slack.com/api/conversations.replies?channel={{ $('Parse Event').first().json.channel }}&ts={{ $('Lookup Decision by Reaction').first().json.slack_thread_ts }}&limit=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "options": {}
+      },
+      "id": "fetch-thread-for-resolution",
+      "name": "Fetch Thread for Resolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 600],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fileData = $('Fetch Decision for Resolve').first().json;\nconst threadData = $input.first().json;\n\n// Decode decision content from base64\nconst decisionContent = Buffer.from(fileData.content, 'base64').toString('utf8');\n\n// Build conversation from thread messages\nconst messages = threadData.messages || [];\nconst conversation = messages.map(m => (m.bot_id ? '[Bot]' : '[Usuario]') + ': ' + m.text).join('\\n');\n\n// Build the prompt for Claude\nconst prompt = `Eres un asistente que documenta decisiones de negocio.\n\nA continuación tienes el contenido de un documento de decisión y la conversación del equipo en Slack donde se discutió y resolvió.\n\n## Documento de decisión:\n${decisionContent}\n\n## Conversación en Slack:\n${conversation}\n\n---\n\nBasándote en la conversación, genera un resumen conciso (2-4 frases) de la decisión tomada para la sección \"## Decisión\" del documento.\n\nFormato requerido:\n- Primera línea: La opción elegida y una breve justificación\n- Segunda línea: Fecha en formato YYYY-MM-DD\n- Si se menciona dónde queda reflejada, incluir el enlace\n\nResponde SOLO con el texto para la sección Decisión, sin explicaciones adicionales.`;\n\nreturn [{\n  json: {\n    prompt,\n    decisionContent,\n    conversation\n  }\n}];"
+      },
+      "id": "prepare-summary-prompt",
+      "name": "Prepare Summary Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: $json.prompt }] }) }}",
+        "options": {}
+      },
+      "id": "generate-decision-summary",
+      "name": "Generate Decision Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 600],
+      "credentials": {
+        "anthropicApi": {
+          "id": "TvqkipfDNVuQ9rHC",
+          "name": "Anthropic Akne"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fileData = $('Fetch Decision for Resolve').first().json;\nconst decisionData = $('Lookup Decision by Reaction').first().json;\nconst eventData = $('Parse Event').first().json;\nconst summaryResponse = $input.first().json;\n\n// Decode content from base64\nconst content = Buffer.from(fileData.content, 'base64').toString('utf8');\n\n// Get the decision summary from Claude\nconst decisionSummary = summaryResponse.content[0].text;\n\n// Update status from open to decided\nlet updatedContent = content.replace(/^(status:\\s*)open/m, '$1decided');\n\n// Replace the Decisión section\nconst decisionSectionRegex = /(## Decisión\\n)[\\s\\S]*?(?=\\n## |\\n<!-- |$)/;\nif (decisionSectionRegex.test(updatedContent)) {\n  updatedContent = updatedContent.replace(decisionSectionRegex, `$1${decisionSummary}\\n\\n`);\n} else {\n  // If no Decisión section, append it\n  updatedContent += `\\n## Decisión\\n${decisionSummary}\\n`;\n}\n\n// Extract title for confirmation message\nconst titleMatch = content.match(/^title:\\s*[\"']?(.+?)[\"']?$/m);\nconst title = titleMatch ? titleMatch[1] : decisionData.decision_id;\n\n// Get file SHA from GitHub response\nconst fileSha = fileData.sha;\n\n// Encode updated content to base64 for GitHub API\nconst updatedContentBase64 = Buffer.from(updatedContent).toString('base64');\n\nreturn [{\n  json: {\n    decision_id: decisionData.decision_id,\n    file_path: decisionData.file_path,\n    file_sha: fileSha,\n    title: title,\n    decision_summary: decisionSummary,\n    original_content: content,\n    updated_content: updatedContent,\n    updated_content_base64: updatedContentBase64,\n    channel: eventData.channel,\n    thread_ts: decisionData.slack_thread_ts,\n    user_id: eventData.user\n  }\n}];"
+      },
+      "id": "update-decision-status",
+      "name": "Update Decision Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 600]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://slack.com/api/users.info?user={{ $json.user_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "options": {}
+      },
+      "id": "get-slack-user",
+      "name": "Get Slack User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 600],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/elevenyellow/akne/git/ref/heads/main",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "id": "get-main-sha",
+      "name": "Get Main SHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2860, 600],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/elevenyellow/akne/git/refs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'refs/heads/resolve/' + $('Update Decision Status').first().json.decision_id, sha: $json.object.sha }) }}",
+        "options": {}
+      },
+      "id": "create-branch",
+      "name": "Create Branch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3080, 600],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.github.com/repos/elevenyellow/akne/contents/{{ $('Update Decision Status').first().json.file_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: 'docs: resolve decision ' + $('Update Decision Status').first().json.decision_id, content: $('Update Decision Status').first().json.updated_content_base64, sha: $('Update Decision Status').first().json.file_sha, branch: 'resolve/' + $('Update Decision Status').first().json.decision_id }) }}",
+        "options": {}
+      },
+      "id": "commit-to-branch",
+      "name": "Commit to Branch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3300, 600],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/elevenyellow/akne/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: 'Resolve decision ' + $('Update Decision Status').first().json.decision_id, body: 'Resolución de la decisión **' + $('Update Decision Status').first().json.decision_id + '**: ' + $('Update Decision Status').first().json.title + '\\n\\n**Decisión:**\\n' + $('Update Decision Status').first().json.decision_summary + '\\n\\nCerrada desde Slack por ' + $('Get Slack User').first().json.user.real_name, head: 'resolve/' + $('Update Decision Status').first().json.decision_id, base: 'main' }) }}",
+        "options": {}
+      },
+      "id": "create-pr",
+      "name": "Create PR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3520, 600],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $('Update Decision Status').first().json.channel, thread_ts: $('Update Decision Status').first().json.thread_ts, text: ':white_check_mark: Decisión *' + $('Update Decision Status').first().json.decision_id + '* resuelta. PR creado: ' + $json.html_url }) }}",
+        "options": {}
+      },
+      "id": "post-resolution-confirmation",
+      "name": "Post Resolution Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3740, 600],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
     }
   ],
   "connections": {
@@ -589,7 +860,7 @@
         [{"node": "List Decision Files", "type": "main", "index": 0}],
         [{"node": "Build Help Response", "type": "main", "index": 0}],
         [{"node": "Lookup Thread Decision", "type": "main", "index": 0}],
-        []
+        [{"node": "Lookup Decision by Reaction", "type": "main", "index": 0}]
       ]
     },
     "List Decision Files": {
@@ -651,6 +922,45 @@
     },
     "Claude Respond": {
       "main": [[{"node": "Post Claude Response", "type": "main", "index": 0}]]
+    },
+    "Lookup Decision by Reaction": {
+      "main": [[{"node": "Is Valid Decision?", "type": "main", "index": 0}]]
+    },
+    "Is Valid Decision?": {
+      "main": [
+        [{"node": "Fetch Decision for Resolve", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Fetch Decision for Resolve": {
+      "main": [[{"node": "Fetch Thread for Resolution", "type": "main", "index": 0}]]
+    },
+    "Fetch Thread for Resolution": {
+      "main": [[{"node": "Prepare Summary Prompt", "type": "main", "index": 0}]]
+    },
+    "Prepare Summary Prompt": {
+      "main": [[{"node": "Generate Decision Summary", "type": "main", "index": 0}]]
+    },
+    "Generate Decision Summary": {
+      "main": [[{"node": "Update Decision Status", "type": "main", "index": 0}]]
+    },
+    "Update Decision Status": {
+      "main": [[{"node": "Get Slack User", "type": "main", "index": 0}]]
+    },
+    "Get Slack User": {
+      "main": [[{"node": "Get Main SHA", "type": "main", "index": 0}]]
+    },
+    "Get Main SHA": {
+      "main": [[{"node": "Create Branch", "type": "main", "index": 0}]]
+    },
+    "Create Branch": {
+      "main": [[{"node": "Commit to Branch", "type": "main", "index": 0}]]
+    },
+    "Commit to Branch": {
+      "main": [[{"node": "Create PR", "type": "main", "index": 0}]]
+    },
+    "Create PR": {
+      "main": [[{"node": "Post Resolution Confirmation", "type": "main", "index": 0}]]
     }
   },
   "settings": {
