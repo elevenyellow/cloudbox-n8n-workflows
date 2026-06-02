@@ -1070,7 +1070,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.claude_body) }}",
-        "options": {}
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "claude-question-initial",
       "name": "Claude Question (Initial)",
@@ -1193,7 +1195,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.claude_body) }}",
-        "options": {}
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "claude-question-continue",
       "name": "Claude Question (Continue)",
@@ -1343,7 +1347,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.claude_body) }}",
-        "options": {}
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "claude-question-loop",
       "name": "Claude Question (Loop)",
