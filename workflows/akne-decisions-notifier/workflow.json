@@ -1,10 +1,659 @@
 {
-  "name": "Akne Decisions Notifier",
-  "nodes": [],
-  "connections": {},
-  "active": false,
+  "name": "Akne Decisions Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "akne-slack-events",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-events",
+      "name": "Slack Events Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "akne-slack-events"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "akne-slack-interactions",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-interactions",
+      "name": "Slack Interactions Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 400],
+      "webhookId": "akne-slack-interactions"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-challenge",
+              "leftValue": "={{ $json.body.challenge }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-challenge",
+      "name": "Is URL Verification?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.body.challenge }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-challenge",
+      "name": "Respond Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, -100]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst body = $input.first().json.body;\nconst event = body.event || {};\n\n// Ignore Slack retries\nif (headers['x-slack-retry-num']) {\n  return [];\n}\n\n// Ignore bot messages to prevent loops\nif (event.bot_id || event.subtype === 'bot_message') {\n  return [];\n}\n\nconst eventType = event.type;\nconst isThreadReply = event.thread_ts && event.thread_ts !== event.ts;\nconst isReaction = eventType === 'reaction_added';\n\n// Extract message text and remove bot mention\nlet text = (event.text || '').trim();\nconst textLower = text.toLowerCase().replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Determine event category\nlet category = 'unknown';\nlet command = null;\n\nif (isReaction && event.reaction === 'white_check_mark') {\n  category = 'resolve_decision';\n} else if (isThreadReply) {\n  category = 'thread_message';\n} else if (textLower.includes('decisions') || textLower.includes('decisiones')) {\n  category = 'command';\n  command = 'decisions';\n} else if (textLower.includes('help') || textLower.includes('ayuda')) {\n  category = 'command';\n  command = 'help';\n}\n\nreturn [{\n  json: {\n    category,\n    command,\n    channel: event.channel || event.item?.channel,\n    user: event.user,\n    text: text,\n    thread_ts: event.thread_ts || event.ts,\n    message_ts: event.ts,\n    reaction: event.reaction,\n    item_ts: event.item?.ts,\n    event_type: eventType\n  }\n}];"
+      },
+      "id": "parse-event",
+      "name": "Parse Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 100]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "command",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "decisions",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "decisions"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "command",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "help"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "thread_message",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "thread"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "resolve_decision",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "resolve"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "id": "route-event",
+      "name": "Route Event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [880, 100]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "list",
+        "owner": "elevenyellow",
+        "repository": "akne",
+        "filePath": "docs/decisions/business"
+      },
+      "id": "list-decision-files",
+      "name": "List Decision Files",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [1100, -100],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const files = $input.all();\nconst mdFiles = files.filter(f => f.json.name && f.json.name.endsWith('.md'));\n\nif (mdFiles.length === 0) {\n  return [{ json: { files: [], hasFiles: false } }];\n}\n\nreturn mdFiles.map(f => ({ json: { path: f.json.path, name: f.json.name } }));"
+      },
+      "id": "filter-md-files",
+      "name": "Filter MD Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, -100]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "get",
+        "owner": "elevenyellow",
+        "repository": "akne",
+        "filePath": "={{ $json.path }}"
+      },
+      "id": "fetch-file-content",
+      "name": "Fetch File Content",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [1540, -100],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst openDecisions = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  let content;\n  \n  if (item.binary && item.binary.data) {\n    try {\n      const binaryData = await this.helpers.getBinaryDataBuffer(i, 'data');\n      content = binaryData.toString('utf8');\n    } catch (e) {\n      continue;\n    }\n  } else {\n    continue;\n  }\n  \n  const fmMatch = content.match(/^---\\n([\\s\\S]*?)\\n---/);\n  if (!fmMatch) continue;\n  \n  const lines = fmMatch[1].split('\\n');\n  const frontmatter = {};\n  for (const line of lines) {\n    const colonIndex = line.indexOf(':');\n    if (colonIndex > 0) {\n      const key = line.slice(0, colonIndex).trim();\n      const value = line.slice(colonIndex + 1).trim().replace(/^[\"']|[\"']$/g, '');\n      frontmatter[key] = value;\n    }\n  }\n  \n  if (frontmatter.status === 'open') {\n    openDecisions.push({\n      id: frontmatter.id || 'unknown',\n      title: frontmatter.title || 'Sin título',\n      created: frontmatter.created || '',\n      path: item.json.path\n    });\n  }\n}\n\nreturn [{ json: { openDecisions, count: openDecisions.length } }];"
+      },
+      "id": "filter-open-decisions",
+      "name": "Filter Open Decisions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { openDecisions, count } = $input.first().json;\nconst channel = $('Parse Event').first().json.channel;\n\nlet text, blocks;\n\nif (count === 0) {\n  text = 'No hay decisiones abiertas';\n  blocks = [\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: '*No hay decisiones abiertas* :white_check_mark:'\n      }\n    }\n  ];\n} else {\n  text = `Hay ${count} decisión(es) abierta(s)`;\n  blocks = [\n    {\n      type: 'header',\n      text: {\n        type: 'plain_text',\n        text: `Decisiones Abiertas (${count})`,\n        emoji: true\n      }\n    }\n  ];\n  \n  for (const decision of openDecisions) {\n    blocks.push({\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*${decision.id}*: ${decision.title}`\n      },\n      accessory: {\n        type: 'button',\n        text: {\n          type: 'plain_text',\n          text: 'Ver detalle',\n          emoji: true\n        },\n        value: JSON.stringify({ id: decision.id, path: decision.path, title: decision.title }),\n        action_id: `view_decision_${decision.id}`\n      }\n    });\n  }\n}\n\nreturn [{ json: { channel, text, blocks } }];"
+      },
+      "id": "build-decisions-response",
+      "name": "Build Decisions Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const channel = $('Parse Event').first().json.channel;\n\nconst text = 'Comandos disponibles';\nconst blocks = [\n  {\n    type: 'header',\n    text: {\n      type: 'plain_text',\n      text: 'Akne - Ayuda',\n      emoji: true\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '*Comandos disponibles:*'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• `decisions` o `decisiones` - Lista las decisiones de negocio abiertas'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• `help` o `ayuda` - Muestra este mensaje de ayuda'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• Responde en el hilo de una decisión para discutirla conmigo'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• Pon :white_check_mark: en un hilo para cerrar la decisión'\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'context',\n    elements: [\n      {\n        type: 'mrkdwn',\n        text: 'Puedes mencionarme en cualquier canal o enviarme un mensaje directo'\n      }\n    ]\n  }\n];\n\nreturn [{ json: { channel, text, blocks } }];"
+      },
+      "id": "build-help-response",
+      "name": "Build Help Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, text: $json.text, blocks: $json.blocks }) }}",
+        "options": {}
+      },
+      "id": "post-to-slack",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 0],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "merge-responses",
+      "name": "Merge Responses",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2000, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "",
+        "options": {}
+      },
+      "id": "respond-interaction-ok",
+      "name": "Respond Interaction OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [220, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Slack sends interaction payload as form-urlencoded with 'payload' field\nconst body = $input.first().json.body;\nlet payload;\n\nif (typeof body === 'string') {\n  payload = JSON.parse(body);\n} else if (body.payload) {\n  payload = JSON.parse(body.payload);\n} else {\n  payload = body;\n}\n\nconst action = payload.actions && payload.actions[0];\nif (!action) {\n  return [];\n}\n\nconst actionId = action.action_id || '';\nconst value = action.value ? JSON.parse(action.value) : {};\n\nreturn [{\n  json: {\n    action_id: actionId,\n    decision_id: value.id,\n    decision_path: value.path,\n    decision_title: value.title,\n    channel: payload.channel?.id || payload.container?.channel_id,\n    user: payload.user?.id,\n    message_ts: payload.message?.ts,\n    response_url: payload.response_url\n  }\n}];"
+      },
+      "id": "parse-interaction",
+      "name": "Parse Interaction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "get",
+        "owner": "elevenyellow",
+        "repository": "akne",
+        "filePath": "={{ $json.decision_path }}"
+      },
+      "id": "fetch-decision-detail",
+      "name": "Fetch Decision Detail",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [660, 400],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst interactionData = $('Parse Interaction').first().json;\n\nlet content;\nif (item.binary && item.binary.data) {\n  const binaryData = await this.helpers.getBinaryDataBuffer(0, 'data');\n  content = binaryData.toString('utf8');\n} else {\n  return [{ json: { error: 'No content' } }];\n}\n\n// Parse frontmatter\nconst fmMatch = content.match(/^---\\n([\\s\\S]*?)\\n---/);\nconst frontmatterRaw = fmMatch ? fmMatch[1] : '';\nconst bodyContent = fmMatch ? content.slice(fmMatch[0].length).trim() : content;\n\n// Parse YAML\nconst lines = frontmatterRaw.split('\\n');\nconst frontmatter = {};\nfor (const line of lines) {\n  const colonIndex = line.indexOf(':');\n  if (colonIndex > 0) {\n    const key = line.slice(0, colonIndex).trim();\n    const value = line.slice(colonIndex + 1).trim().replace(/^[\"']|[\"']$/g, '');\n    frontmatter[key] = value;\n  }\n}\n\n// Extract sections\nfunction extractSection(name) {\n  const regex = new RegExp(`## ${name}\\\\s*\\\\n([\\\\s\\\\S]*?)(?=\\\\n## |$)`, 'i');\n  const match = bodyContent.match(regex);\n  return match ? match[1].trim() : '';\n}\n\nconst context = extractSection('Contexto') || extractSection('Context');\nconst options = extractSection('Opciones') || extractSection('Options');\nconst question = extractSection('Pregunta') || extractSection('Question');\n\nconst githubUrl = `https://github.com/elevenyellow/akne/blob/main/${interactionData.decision_path}`;\n\nreturn [{\n  json: {\n    channel: interactionData.channel,\n    decision_id: interactionData.decision_id,\n    decision_path: interactionData.decision_path,\n    title: frontmatter.title || interactionData.decision_title,\n    status: frontmatter.status,\n    resolver: frontmatter.resolver,\n    context,\n    options,\n    question,\n    full_content: content,\n    github_url: githubUrl,\n    message_ts: interactionData.message_ts\n  }\n}];"
+      },
+      "id": "parse-decision-detail",
+      "name": "Parse Decision Detail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO akne_decision_threads (decision_id, file_path, slack_thread_ts, slack_channel, github_repo, decision_context)\nVALUES (\n  '{{ $('Parse Decision Detail').first().json.decision_id }}',\n  '{{ $('Parse Decision Detail').first().json.decision_path }}',\n  '{{ $json.ts }}',\n  '{{ $json.channel }}',\n  'elevenyellow/akne',\n  '{{ $('Parse Decision Detail').first().json.full_content.replace(/'/g, \"''\") }}'\n)\nON CONFLICT (decision_id) DO UPDATE SET\n  slack_thread_ts = EXCLUDED.slack_thread_ts,\n  slack_channel = EXCLUDED.slack_channel,\n  updated_at = NOW()",
+        "options": {}
+      },
+      "id": "save-decision-thread",
+      "name": "Save Decision Thread",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1760, 400],
+      "credentials": {
+        "postgres": {
+          "id": "dUNmqLlEPiY66wXr",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Parse Decision Detail').first().json;\n\n// Truncate long text for Slack limits\nconst truncate = (text, max = 2500) => {\n  if (!text) return '_No especificado_';\n  if (text.length <= max) return text;\n  return text.slice(0, max) + '...';\n};\n\nconst blocks = [\n  {\n    type: 'header',\n    text: {\n      type: 'plain_text',\n      text: `${data.decision_id}: ${data.title}`,\n      emoji: true\n    }\n  },\n  {\n    type: 'section',\n    fields: [\n      {\n        type: 'mrkdwn',\n        text: `*Estado:* ${data.status || 'open'}`\n      },\n      {\n        type: 'mrkdwn', \n        text: `*Resolver:* ${data.resolver || 'No asignado'}`\n      }\n    ]\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Contexto*\\n${truncate(data.context)}`\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Opciones*\\n${truncate(data.options)}`\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Pregunta*\\n${truncate(data.question)}`\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'context',\n    elements: [\n      {\n        type: 'mrkdwn',\n        text: `<${data.github_url}|Ver en GitHub> | Responde en este hilo para discutir | :white_check_mark: para cerrar`\n      }\n    ]\n  }\n];\n\n// No thread_ts - cada detalle es un mensaje nuevo que inicia su propio thread\nreturn [{\n  json: {\n    channel: data.channel,\n    text: `Detalle de ${data.decision_id}: ${data.title}`,\n    blocks\n  }\n}];"
+      },
+      "id": "build-detail-response",
+      "name": "Build Detail Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, text: $json.text, blocks: $json.blocks }) }}",
+        "options": {}
+      },
+      "id": "post-detail-to-slack",
+      "name": "Post Detail to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 400],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM akne_decision_threads WHERE slack_thread_ts = '{{ $json.thread_ts }}' OR slack_thread_ts = '{{ $json.message_ts }}'",
+        "options": {}
+      },
+      "id": "lookup-thread-decision",
+      "name": "Lookup Thread Decision",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, 200],
+      "credentials": {
+        "postgres": {
+          "id": "dUNmqLlEPiY66wXr",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-decision",
+              "leftValue": "={{ $json.decision_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-decision-thread",
+      "name": "Is Decision Thread?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1320, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://slack.com/api/conversations.replies?channel={{ $('Parse Event').first().json.channel }}&ts={{ $('Parse Event').first().json.thread_ts }}&limit=50",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "options": {}
+      },
+      "id": "fetch-thread-history",
+      "name": "Fetch Thread History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const decisionData = $('Lookup Thread Decision').first().json;\nconst threadData = $input.first().json;\nconst eventData = $('Parse Event').first().json;\n\nconst messages = threadData.messages || [];\n\n// Build conversation history for Claude\nconst conversationHistory = messages\n  .filter(m => !m.bot_id) // Exclude bot messages from history to Claude\n  .map(m => ({\n    role: 'user',\n    content: m.text\n  }));\n\n// Get the latest user message\nconst latestMessage = eventData.text;\n\nreturn [{\n  json: {\n    decision_id: decisionData.decision_id,\n    decision_context: decisionData.decision_context,\n    file_path: decisionData.file_path,\n    channel: eventData.channel,\n    thread_ts: eventData.thread_ts,\n    user: eventData.user,\n    latest_message: latestMessage,\n    conversation_history: conversationHistory\n  }\n}];"
+      },
+      "id": "prepare-claude-context",
+      "name": "Prepare Claude Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: 'Eres Akne, un asistente para ayudar a tomar decisiones de negocio en un proyecto de teledermatología.\\n\\nEstás participando en una discusión sobre la siguiente decisión:\\n\\n' + $json.decision_context + '\\n\\n---\\n\\nTu rol es:\\n1. Ayudar a analizar las opciones presentadas\\n2. Hacer preguntas clarificadoras si es necesario\\n3. Ofrecer perspectivas adicionales basadas en el contexto\\n4. NO tomar la decisión - eso le corresponde al equipo\\n5. Ser conciso y directo en tus respuestas\\n6. Responder en español\\n\\nEl usuario acaba de escribir:\\n' + $json.latest_message }] }) }}",
+        "options": {}
+      },
+      "id": "claude-respond",
+      "name": "Claude Respond",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 200],
+      "credentials": {
+        "anthropicApi": {
+          "id": "TvqkipfDNVuQ9rHC",
+          "name": "Anthropic Akne"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $('Prepare Claude Context').first().json.channel, thread_ts: $('Prepare Claude Context').first().json.thread_ts, text: $json.content[0].text }) }}",
+        "options": {}
+      },
+      "id": "post-claude-response",
+      "name": "Post Claude Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Slack Events Webhook": {
+      "main": [[{"node": "Is URL Verification?", "type": "main", "index": 0}]]
+    },
+    "Is URL Verification?": {
+      "main": [
+        [{"node": "Respond Challenge", "type": "main", "index": 0}],
+        [{"node": "Respond OK", "type": "main", "index": 0}]
+      ]
+    },
+    "Respond OK": {
+      "main": [[{"node": "Parse Event", "type": "main", "index": 0}]]
+    },
+    "Parse Event": {
+      "main": [[{"node": "Route Event", "type": "main", "index": 0}]]
+    },
+    "Route Event": {
+      "main": [
+        [{"node": "List Decision Files", "type": "main", "index": 0}],
+        [{"node": "Build Help Response", "type": "main", "index": 0}],
+        [{"node": "Lookup Thread Decision", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "List Decision Files": {
+      "main": [[{"node": "Filter MD Files", "type": "main", "index": 0}]]
+    },
+    "Filter MD Files": {
+      "main": [[{"node": "Fetch File Content", "type": "main", "index": 0}]]
+    },
+    "Fetch File Content": {
+      "main": [[{"node": "Filter Open Decisions", "type": "main", "index": 0}]]
+    },
+    "Filter Open Decisions": {
+      "main": [[{"node": "Build Decisions Response", "type": "main", "index": 0}]]
+    },
+    "Build Decisions Response": {
+      "main": [[{"node": "Merge Responses", "type": "main", "index": 0}]]
+    },
+    "Build Help Response": {
+      "main": [[{"node": "Merge Responses", "type": "main", "index": 1}]]
+    },
+    "Merge Responses": {
+      "main": [[{"node": "Post to Slack", "type": "main", "index": 0}]]
+    },
+    "Slack Interactions Webhook": {
+      "main": [[{"node": "Respond Interaction OK", "type": "main", "index": 0}]]
+    },
+    "Respond Interaction OK": {
+      "main": [[{"node": "Parse Interaction", "type": "main", "index": 0}]]
+    },
+    "Parse Interaction": {
+      "main": [[{"node": "Fetch Decision Detail", "type": "main", "index": 0}]]
+    },
+    "Fetch Decision Detail": {
+      "main": [[{"node": "Parse Decision Detail", "type": "main", "index": 0}]]
+    },
+    "Parse Decision Detail": {
+      "main": [[{"node": "Build Detail Response", "type": "main", "index": 0}]]
+    },
+    "Build Detail Response": {
+      "main": [[{"node": "Post Detail to Slack", "type": "main", "index": 0}]]
+    },
+    "Post Detail to Slack": {
+      "main": [[{"node": "Save Decision Thread", "type": "main", "index": 0}]]
+    },
+    "Lookup Thread Decision": {
+      "main": [[{"node": "Is Decision Thread?", "type": "main", "index": 0}]]
+    },
+    "Is Decision Thread?": {
+      "main": [
+        [{"node": "Fetch Thread History", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Fetch Thread History": {
+      "main": [[{"node": "Prepare Claude Context", "type": "main", "index": 0}]]
+    },
+    "Prepare Claude Context": {
+      "main": [[{"node": "Claude Respond", "type": "main", "index": 0}]]
+    },
+    "Claude Respond": {
+      "main": [[{"node": "Post Claude Response", "type": "main", "index": 0}]]
+    }
+  },
   "settings": {
     "executionOrder": "v1"
-  },
-  "tags": []
+  }
 }
