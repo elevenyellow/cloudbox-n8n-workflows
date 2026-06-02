@@ -387,14 +387,14 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO akne_decision_threads (decision_id, file_path, slack_thread_ts, slack_channel, github_repo, decision_context)\nVALUES (\n  '{{ $('Parse Decision Detail').first().json.decision_id }}',\n  '{{ $('Parse Decision Detail').first().json.decision_path }}',\n  '{{ $json.ts }}',\n  '{{ $json.channel }}',\n  'elevenyellow/akne',\n  '{{ $('Parse Decision Detail').first().json.full_content.replace(/'/g, \"''\") }}'\n)\nON CONFLICT (decision_id) DO UPDATE SET\n  slack_thread_ts = EXCLUDED.slack_thread_ts,\n  slack_channel = EXCLUDED.slack_channel,\n  updated_at = NOW()",
+        "query": "INSERT INTO akne_decision_threads (decision_id, file_path, slack_thread_ts, slack_channel, github_repo, decision_context)\nVALUES (\n  '{{ $('Parse Decision Detail').first().json.decision_id }}',\n  '{{ $('Parse Decision Detail').first().json.decision_path }}',\n  '{{ $('Post Detail to Slack').first().json.ts }}',\n  '{{ $('Post Detail to Slack').first().json.channel }}',\n  'elevenyellow/akne',\n  '{{ $('Parse Decision Detail').first().json.full_content.replace(/'/g, \"''\") }}'\n)\nON CONFLICT (decision_id) DO UPDATE SET\n  slack_thread_ts = EXCLUDED.slack_thread_ts,\n  slack_channel = EXCLUDED.slack_channel,\n  updated_at = NOW()",
         "options": {}
       },
       "id": "save-decision-thread",
       "name": "Save Decision Thread",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1760, 400],
+      "position": [1980, 400],
       "credentials": {
         "postgres": {
           "id": "dUNmqLlEPiY66wXr",
@@ -404,7 +404,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $('Parse Decision Detail').first().json;\n\n// Truncate long text for Slack limits\nconst truncate = (text, max = 2500) => {\n  if (!text) return '_No especificado_';\n  if (text.length <= max) return text;\n  return text.slice(0, max) + '...';\n};\n\nconst blocks = [\n  {\n    type: 'header',\n    text: {\n      type: 'plain_text',\n      text: `${data.decision_id}: ${data.title}`,\n      emoji: true\n    }\n  },\n  {\n    type: 'section',\n    fields: [\n      {\n        type: 'mrkdwn',\n        text: `*Estado:* ${data.status || 'open'}`\n      },\n      {\n        type: 'mrkdwn', \n        text: `*Resolver:* ${data.resolver || 'No asignado'}`\n      }\n    ]\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Contexto*\\n${truncate(data.context)}`\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Opciones*\\n${truncate(data.options)}`\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Pregunta*\\n${truncate(data.question)}`\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'context',\n    elements: [\n      {\n        type: 'mrkdwn',\n        text: `<${data.github_url}|Ver en GitHub> | Responde en este hilo para discutir | :white_check_mark: para cerrar`\n      }\n    ]\n  }\n];\n\n// No thread_ts - cada detalle es un mensaje nuevo que inicia su propio thread\nreturn [{\n  json: {\n    channel: data.channel,\n    text: `Detalle de ${data.decision_id}: ${data.title}`,\n    blocks\n  }\n}];"
+        "jsCode": "const data = $('Parse Decision Detail').first().json;\n\n// Truncate long text for Slack limits\nconst truncate = (text, max = 2500) => {\n  if (!text) return '_No especificado_';\n  if (text.length <= max) return text;\n  return text.slice(0, max) + '...';\n};\n\n// Convert markdown bold (**text**) to Slack bold (*text*)\nconst toSlack = (text) => {\n  if (!text) return '_No especificado_';\n  return text.replace(/\\*\\*(.+?)\\*\\*/g, '*$1*');\n};\n\nconst blocks = [\n  {\n    type: 'header',\n    text: {\n      type: 'plain_text',\n      text: `${data.decision_id}: ${data.title}`,\n      emoji: true\n    }\n  },\n  {\n    type: 'section',\n    fields: [\n      {\n        type: 'mrkdwn',\n        text: `*Estado:* ${data.status || 'open'}`\n      },\n      {\n        type: 'mrkdwn', \n        text: `*Resolver:* ${data.resolver || 'No asignado'}`\n      }\n    ]\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Contexto*`\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: toSlack(truncate(data.context))\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Opciones*`\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: toSlack(truncate(data.options))\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: `*Pregunta*`\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: toSlack(truncate(data.question))\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'context',\n    elements: [\n      {\n        type: 'mrkdwn',\n        text: `<${data.github_url}|Ver en GitHub> | Responde en este hilo para discutir | :white_check_mark: para cerrar`\n      }\n    ]\n  }\n];\n\n// No thread_ts - cada detalle es un mensaje nuevo que inicia su propio thread\nreturn [{\n  json: {\n    channel: data.channel,\n    text: `Detalle de ${data.decision_id}: ${data.title}`,\n    blocks\n  }\n}];"
       },
       "id": "build-detail-response",
       "name": "Build Detail Response",
@@ -428,6 +428,29 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1540, 400],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, thread_ts: $json.ts, text: 'Hilo de discusión abierto. Pon :white_check_mark: en el mensaje principal cuando se cierre la decisión.' }) }}",
+        "options": {}
+      },
+      "id": "start-thread",
+      "name": "Start Thread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 400],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -903,6 +926,9 @@
       "main": [[{"node": "Post Detail to Slack", "type": "main", "index": 0}]]
     },
     "Post Detail to Slack": {
+      "main": [[{"node": "Start Thread", "type": "main", "index": 0}]]
+    },
+    "Start Thread": {
       "main": [[{"node": "Save Decision Thread", "type": "main", "index": 0}]]
     },
     "Lookup Thread Decision": {
