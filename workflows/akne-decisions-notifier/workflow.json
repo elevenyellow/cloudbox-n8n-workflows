@@ -12,7 +12,10 @@
       "name": "Slack Events Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "akne-slack-events"
     },
     {
@@ -26,7 +29,10 @@
       "name": "Slack Interactions Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 400],
+      "position": [
+        0,
+        400
+      ],
       "webhookId": "akne-slack-interactions"
     },
     {
@@ -56,7 +62,10 @@
       "name": "Is URL Verification?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
@@ -77,7 +86,10 @@
       "name": "Respond Challenge",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [440, -100]
+      "position": [
+        440,
+        -100
+      ]
     },
     {
       "parameters": {
@@ -89,17 +101,23 @@
       "name": "Respond OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [440, 100]
+      "position": [
+        440,
+        100
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const headers = $input.first().json.headers || {};\nconst body = $input.first().json.body;\nconst event = body.event || {};\n\n// Ignore Slack retries\nif (headers['x-slack-retry-num']) {\n  return [];\n}\n\n// Ignore bot messages to prevent loops\nif (event.bot_id || event.subtype === 'bot_message') {\n  return [];\n}\n\nconst eventType = event.type;\nconst isThreadReply = event.thread_ts && event.thread_ts !== event.ts;\nconst isReaction = eventType === 'reaction_added';\n\n// Extract message text and remove bot mention\nlet text = (event.text || '').trim();\nconst textLower = text.toLowerCase().replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Determine event category\nlet category = 'unknown';\nlet command = null;\n\nif (isReaction && event.reaction === 'white_check_mark') {\n  category = 'resolve_decision';\n} else if (isThreadReply) {\n  category = 'thread_message';\n} else if (textLower.includes('decisions') || textLower.includes('decisiones')) {\n  category = 'command';\n  command = 'decisions';\n} else if (textLower.includes('help') || textLower.includes('ayuda')) {\n  category = 'command';\n  command = 'help';\n}\n\nreturn [{\n  json: {\n    category,\n    command,\n    channel: event.channel || event.item?.channel,\n    user: event.user,\n    text: text,\n    thread_ts: event.thread_ts || event.ts,\n    message_ts: event.ts,\n    reaction: event.reaction,\n    item_ts: event.item?.ts,\n    event_type: eventType\n  }\n}];"
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst body = $input.first().json.body;\nconst event = body.event || {};\n\n// Ignore Slack retries\nif (headers['x-slack-retry-num']) {\n  return [];\n}\n\n// Ignore bot messages to prevent loops\nif (event.bot_id || event.subtype === 'bot_message') {\n  return [];\n}\n\nconst eventType = event.type;\nconst isThreadReply = event.thread_ts && event.thread_ts !== event.ts;\nconst isReaction = eventType === 'reaction_added';\nconst isDM = event.channel_type === 'im';\nconst hasBotMention = (event.text || '').includes('<@');\n\n// Extract message text and remove bot mention\nlet text = (event.text || '').trim();\nconst textLower = text.toLowerCase().replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Determine event category\nlet category = 'unknown';\nlet command = null;\n\nif (isReaction && event.reaction === 'white_check_mark') {\n  category = 'resolve_decision';\n} else if (isThreadReply) {\n  category = 'thread_message';\n} else if (textLower.includes('decisions') || textLower.includes('decisiones')) {\n  category = 'command';\n  command = 'decisions';\n} else if (textLower.includes('help') || textLower.includes('ayuda')) {\n  category = 'command';\n  command = 'help';\n} else if (isDM || hasBotMention) {\n  // General question - DM or mention that's not a specific command\n  category = 'general_question';\n}\n\nreturn [{\n  json: {\n    category,\n    command,\n    channel: event.channel || event.item?.channel,\n    user: event.user,\n    text: text,\n    thread_ts: event.thread_ts || event.ts,\n    message_ts: event.ts,\n    reaction: event.reaction,\n    item_ts: event.item?.ts,\n    event_type: eventType,\n    is_dm: isDM\n  }\n}];"
       },
       "id": "parse-event",
       "name": "Parse Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 100]
+      "position": [
+        660,
+        100
+      ]
     },
     {
       "parameters": {
@@ -208,6 +226,28 @@
               },
               "renameOutput": true,
               "outputKey": "resolve"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "general_question",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "question"
             }
           ]
         },
@@ -219,7 +259,10 @@
       "name": "Route Event",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [880, 100]
+      "position": [
+        880,
+        100
+      ]
     },
     {
       "parameters": {
@@ -233,7 +276,10 @@
       "name": "List Decision Files",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [1100, -100],
+      "position": [
+        1100,
+        -100
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -249,7 +295,10 @@
       "name": "Filter MD Files",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, -100]
+      "position": [
+        1320,
+        -100
+      ]
     },
     {
       "parameters": {
@@ -263,7 +312,10 @@
       "name": "Fetch File Content",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [1540, -100],
+      "position": [
+        1540,
+        -100
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -279,7 +331,10 @@
       "name": "Filter Open Decisions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, -100]
+      "position": [
+        1760,
+        -100
+      ]
     },
     {
       "parameters": {
@@ -289,7 +344,10 @@
       "name": "Build Decisions Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, -100]
+      "position": [
+        1980,
+        -100
+      ]
     },
     {
       "parameters": {
@@ -299,7 +357,10 @@
       "name": "Build Help Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 100]
+      "position": [
+        1100,
+        100
+      ]
     },
     {
       "parameters": {
@@ -316,7 +377,10 @@
       "name": "Post to Slack",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2200, 0],
+      "position": [
+        2200,
+        0
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -330,7 +394,10 @@
       "name": "Merge Responses",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [2000, 0]
+      "position": [
+        2000,
+        0
+      ]
     },
     {
       "parameters": {
@@ -342,7 +409,10 @@
       "name": "Respond Interaction OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [220, 400]
+      "position": [
+        220,
+        400
+      ]
     },
     {
       "parameters": {
@@ -352,7 +422,10 @@
       "name": "Parse Interaction",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 400]
+      "position": [
+        440,
+        400
+      ]
     },
     {
       "parameters": {
@@ -366,7 +439,10 @@
       "name": "Fetch Decision Detail",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [660, 400],
+      "position": [
+        660,
+        400
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -382,7 +458,10 @@
       "name": "Parse Decision Detail",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 400]
+      "position": [
+        880,
+        400
+      ]
     },
     {
       "parameters": {
@@ -394,7 +473,10 @@
       "name": "Save Decision Thread",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1980, 400],
+      "position": [
+        1980,
+        400
+      ],
       "credentials": {
         "postgres": {
           "id": "dUNmqLlEPiY66wXr",
@@ -410,7 +492,10 @@
       "name": "Build Detail Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, 400]
+      "position": [
+        1320,
+        400
+      ]
     },
     {
       "parameters": {
@@ -427,7 +512,10 @@
       "name": "Post Detail to Slack",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 400],
+      "position": [
+        1540,
+        400
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -450,7 +538,10 @@
       "name": "Start Thread",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, 400],
+      "position": [
+        1760,
+        400
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -468,7 +559,10 @@
       "name": "Lookup Thread Decision",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1100, 200],
+      "position": [
+        1100,
+        200
+      ],
       "credentials": {
         "postgres": {
           "id": "dUNmqLlEPiY66wXr",
@@ -503,7 +597,10 @@
       "name": "Is Decision Thread?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1320, 200]
+      "position": [
+        1320,
+        200
+      ]
     },
     {
       "parameters": {
@@ -517,7 +614,10 @@
       "name": "Fetch Thread History",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 200],
+      "position": [
+        1540,
+        200
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -533,7 +633,10 @@
       "name": "Prepare Claude Context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 200]
+      "position": [
+        1760,
+        200
+      ]
     },
     {
       "parameters": {
@@ -559,7 +662,10 @@
       "name": "Claude Respond",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1980, 200],
+      "position": [
+        1980,
+        200
+      ],
       "credentials": {
         "anthropicApi": {
           "id": "TvqkipfDNVuQ9rHC",
@@ -582,7 +688,10 @@
       "name": "Post Claude Response",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2200, 200],
+      "position": [
+        2200,
+        200
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -600,7 +709,10 @@
       "name": "Lookup Decision by Reaction",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1100, 600],
+      "position": [
+        1100,
+        600
+      ],
       "credentials": {
         "postgres": {
           "id": "dUNmqLlEPiY66wXr",
@@ -635,7 +747,10 @@
       "name": "Is Valid Decision?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1320, 600]
+      "position": [
+        1320,
+        600
+      ]
     },
     {
       "parameters": {
@@ -649,7 +764,10 @@
       "name": "Fetch Decision for Resolve",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 600],
+      "position": [
+        1540,
+        600
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -669,7 +787,10 @@
       "name": "Fetch Thread for Resolution",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, 600],
+      "position": [
+        1760,
+        600
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -685,7 +806,10 @@
       "name": "Prepare Summary Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, 600]
+      "position": [
+        1980,
+        600
+      ]
     },
     {
       "parameters": {
@@ -711,7 +835,10 @@
       "name": "Generate Decision Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2200, 600],
+      "position": [
+        2200,
+        600
+      ],
       "credentials": {
         "anthropicApi": {
           "id": "TvqkipfDNVuQ9rHC",
@@ -727,7 +854,10 @@
       "name": "Update Decision Status",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2420, 600]
+      "position": [
+        2420,
+        600
+      ]
     },
     {
       "parameters": {
@@ -741,7 +871,10 @@
       "name": "Get Slack User",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2640, 600],
+      "position": [
+        2640,
+        600
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -761,7 +894,10 @@
       "name": "Get Main SHA",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2860, 600],
+      "position": [
+        2860,
+        600
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -784,7 +920,10 @@
       "name": "Create Branch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3080, 600],
+      "position": [
+        3080,
+        600
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -807,7 +946,10 @@
       "name": "Commit to Branch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3300, 600],
+      "position": [
+        3300,
+        600
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -830,7 +972,10 @@
       "name": "Create PR",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3520, 600],
+      "position": [
+        3520,
+        600
+      ],
       "credentials": {
         "githubApi": {
           "id": "DG6zdZZItCmtMRqk",
@@ -853,7 +998,250 @@
       "name": "Post Resolution Confirmation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3740, 600],
+      "position": [
+        3740,
+        600
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/elevenyellow/akne/contents/docs/README.md",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-docs-readme",
+      "name": "Fetch Docs README",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        800
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Route Event').first().json;\nconst readmeResponse = $input.first().json;\n\n// Decode README content\nconst readmeContent = Buffer.from(readmeResponse.content, 'base64').toString('utf-8');\n\n// Clean question text (remove bot mention)\nconst question = input.text.replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Build system prompt with Slack formatting instructions\nconst systemPrompt = `Eres Akne, el mentor técnico del proyecto AKNE - una plataforma de teledermatología. Tienes un conocimiento profundo del proyecto y su historia.\n\nTu personalidad:\n- Guía experta y paciente\n- Conoces el contexto histórico de cada decisión\n- Explicas el 'por qué' detrás de las cosas\n- Usas analogías cuando ayudan a clarificar\n- Respondes en el idioma de la pregunta (español o inglés)\n- Eres conciso pero completo\n\nFORMATO DE RESPUESTA (MUY IMPORTANTE):\n- Usa formato Slack, NO markdown estándar\n- Para negrita: *texto* (un solo asterisco a cada lado)\n- Para cursiva: _texto_\n- Para código inline: \\`código\\`\n- Para bloques de código: \\`\\`\\`código\\`\\`\\`\n- NO uses ## o # para títulos, usa *Título* en negrita seguido de nueva línea\n- NO uses **texto** para negrita, usa *texto*\n- Usa bullet points con • o -\n- Usa líneas vacías para separar secciones\n\nTienes acceso a la documentación del proyecto. Aquí está el mapa de docs:\n\n${readmeContent}\n\nPuedes usar la tool 'read_doc' para leer cualquier archivo de docs/ cuando necesites más contexto. Los paths relativos empiezan desde la raíz del repo (ej: docs/strategy/vision.md).`;\n\n// Build Claude request body\nconst claudeBody = {\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 4096,\n  system: systemPrompt,\n  tools: [{\n    name: 'read_doc',\n    description: 'Lee un archivo de documentación del repo. Usa paths como docs/strategy/vision.md, docs/product/actors.md, etc.',\n    input_schema: {\n      type: 'object',\n      properties: {\n        path: {\n          type: 'string',\n          description: 'Path del archivo relativo a la raíz del repo, ej: docs/strategy/vision.md'\n        }\n      },\n      required: ['path']\n    }\n  }],\n  messages: [{\n    role: 'user',\n    content: question\n  }]\n};\n\nreturn [{\n  json: {\n    channel: input.channel,\n    thread_ts: input.message_ts,\n    user: input.user,\n    question: question,\n    readme_content: readmeContent,\n    claude_body: claudeBody\n  }\n}];"
+      },
+      "id": "prepare-question-context",
+      "name": "Prepare Question Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claude_body) }}",
+        "options": {}
+      },
+      "id": "claude-question-initial",
+      "name": "Claude Question (Initial)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        800
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "TvqkipfDNVuQ9rHC",
+          "name": "Anthropic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-tool-use",
+              "leftValue": "={{ $json.stop_reason }}",
+              "rightValue": "tool_use",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "needs-tool-call",
+      "name": "Needs Tool Call?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst toolUse = response.content.find(c => c.type === 'tool_use');\n\nif (!toolUse) {\n  throw new Error('No tool_use block found');\n}\n\nreturn [{\n  json: {\n    tool_use_id: toolUse.id,\n    tool_name: toolUse.name,\n    file_path: toolUse.input.path,\n    previous_response: response\n  }\n}];"
+      },
+      "id": "extract-tool-call",
+      "name": "Extract Tool Call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/elevenyellow/akne/contents/{{ $json.file_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-requested-doc",
+      "name": "Fetch Requested Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        700
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const toolCall = $('Extract Tool Call').first().json;\nconst docResponse = $input.first().json;\nconst context = $('Prepare Question Context').first().json;\nconst previousResponse = toolCall.previous_response;\n\n// Decode doc content\nlet docContent;\ntry {\n  docContent = Buffer.from(docResponse.content, 'base64').toString('utf-8');\n} catch (e) {\n  docContent = 'Error: Could not read file at ' + toolCall.file_path;\n}\n\n// Build messages array with tool result\nconst messages = [\n  { role: 'user', content: context.question },\n  { role: 'assistant', content: previousResponse.content },\n  { role: 'user', content: [{\n    type: 'tool_result',\n    tool_use_id: toolCall.tool_use_id,\n    content: docContent\n  }]}\n];\n\n// Build system prompt\nconst systemPrompt = `Eres Akne, el mentor técnico del proyecto AKNE - una plataforma de teledermatología. Tienes un conocimiento profundo del proyecto y su historia.\n\nTu personalidad:\n- Guía experta y paciente\n- Conoces el contexto histórico de cada decisión\n- Explicas el 'por qué' detrás de las cosas\n- Usas analogías cuando ayudan a clarificar\n- Respondes en el idioma de la pregunta (español o inglés)\n- Eres conciso pero completo\n\nTienes acceso a la documentación del proyecto. Aquí está el mapa de docs:\n\n${context.readme_content}\n\nResponde de forma útil y estructurada. Usa formato Slack (*bold*, _italic_, \\`\\`\\`code\\`\\`\\`).`;\n\n// Build Claude request body\nconst claudeBody = {\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: messages\n};\n\nreturn [{\n  json: {\n    channel: context.channel,\n    thread_ts: context.thread_ts,\n    claude_body: claudeBody\n  }\n}];"
+      },
+      "id": "prepare-tool-result",
+      "name": "Prepare Tool Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claude_body) }}",
+        "options": {}
+      },
+      "id": "claude-question-continue",
+      "name": "Claude Question (Continue)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        700
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "TvqkipfDNVuQ9rHC",
+          "name": "Anthropic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet context;\n\n// Get context from appropriate source\ntry {\n  context = $('Prepare Tool Result').first().json;\n} catch (e) {\n  context = $('Prepare Question Context').first().json;\n}\n\n// Extract text response\nconst textBlock = response.content.find(c => c.type === 'text');\nlet responseText = textBlock ? textBlock.text : 'No pude generar una respuesta.';\n\n// Convert any remaining markdown to Slack format\nresponseText = responseText\n  .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')  // **bold** -> *bold*\n  .replace(/^##\\s+(.+)$/gm, '*$1*')      // ## Title -> *Title*\n  .replace(/^#\\s+(.+)$/gm, '*$1*');       // # Title -> *Title*\n\nreturn [{\n  json: {\n    channel: context.channel,\n    thread_ts: context.thread_ts,\n    response: responseText\n  }\n}];"
+      },
+      "id": "format-question-response",
+      "name": "Format Question Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, thread_ts: $json.thread_ts, text: $json.response }) }}",
+        "options": {}
+      },
+      "id": "post-question-response",
+      "name": "Post Question Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        800
+      ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
@@ -864,129 +1252,554 @@
   ],
   "connections": {
     "Slack Events Webhook": {
-      "main": [[{"node": "Is URL Verification?", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Is URL Verification?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Is URL Verification?": {
       "main": [
-        [{"node": "Respond Challenge", "type": "main", "index": 0}],
-        [{"node": "Respond OK", "type": "main", "index": 0}]
+        [
+          {
+            "node": "Respond Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Respond OK": {
-      "main": [[{"node": "Parse Event", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Parse Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Event": {
-      "main": [[{"node": "Route Event", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Route Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Route Event": {
       "main": [
-        [{"node": "List Decision Files", "type": "main", "index": 0}],
-        [{"node": "Build Help Response", "type": "main", "index": 0}],
-        [{"node": "Lookup Thread Decision", "type": "main", "index": 0}],
-        [{"node": "Lookup Decision by Reaction", "type": "main", "index": 0}]
+        [
+          {
+            "node": "List Decision Files",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Help Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Thread Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Decision by Reaction",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Docs README",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "List Decision Files": {
-      "main": [[{"node": "Filter MD Files", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Filter MD Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter MD Files": {
-      "main": [[{"node": "Fetch File Content", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Fetch File Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch File Content": {
-      "main": [[{"node": "Filter Open Decisions", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Filter Open Decisions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter Open Decisions": {
-      "main": [[{"node": "Build Decisions Response", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Build Decisions Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Decisions Response": {
-      "main": [[{"node": "Merge Responses", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Help Response": {
-      "main": [[{"node": "Merge Responses", "type": "main", "index": 1}]]
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
     },
     "Merge Responses": {
-      "main": [[{"node": "Post to Slack", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Slack Interactions Webhook": {
-      "main": [[{"node": "Respond Interaction OK", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Respond Interaction OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Respond Interaction OK": {
-      "main": [[{"node": "Parse Interaction", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Parse Interaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Interaction": {
-      "main": [[{"node": "Fetch Decision Detail", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Fetch Decision Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Decision Detail": {
-      "main": [[{"node": "Parse Decision Detail", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Parse Decision Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Decision Detail": {
-      "main": [[{"node": "Build Detail Response", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Build Detail Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Detail Response": {
-      "main": [[{"node": "Post Detail to Slack", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Post Detail to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Post Detail to Slack": {
-      "main": [[{"node": "Start Thread", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Start Thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Start Thread": {
-      "main": [[{"node": "Save Decision Thread", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Save Decision Thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Lookup Thread Decision": {
-      "main": [[{"node": "Is Decision Thread?", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Is Decision Thread?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Is Decision Thread?": {
       "main": [
-        [{"node": "Fetch Thread History", "type": "main", "index": 0}],
+        [
+          {
+            "node": "Fetch Thread History",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
     "Fetch Thread History": {
-      "main": [[{"node": "Prepare Claude Context", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Prepare Claude Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Claude Context": {
-      "main": [[{"node": "Claude Respond", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Claude Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Claude Respond": {
-      "main": [[{"node": "Post Claude Response", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Post Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Lookup Decision by Reaction": {
-      "main": [[{"node": "Is Valid Decision?", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Is Valid Decision?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Is Valid Decision?": {
       "main": [
-        [{"node": "Fetch Decision for Resolve", "type": "main", "index": 0}],
+        [
+          {
+            "node": "Fetch Decision for Resolve",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
     "Fetch Decision for Resolve": {
-      "main": [[{"node": "Fetch Thread for Resolution", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Fetch Thread for Resolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Thread for Resolution": {
-      "main": [[{"node": "Prepare Summary Prompt", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Prepare Summary Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Summary Prompt": {
-      "main": [[{"node": "Generate Decision Summary", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Generate Decision Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Generate Decision Summary": {
-      "main": [[{"node": "Update Decision Status", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Update Decision Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Update Decision Status": {
-      "main": [[{"node": "Get Slack User", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Get Slack User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Slack User": {
-      "main": [[{"node": "Get Main SHA", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Get Main SHA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Main SHA": {
-      "main": [[{"node": "Create Branch", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Create Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Create Branch": {
-      "main": [[{"node": "Commit to Branch", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Commit to Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Commit to Branch": {
-      "main": [[{"node": "Create PR", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Create PR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Create PR": {
-      "main": [[{"node": "Post Resolution Confirmation", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Post Resolution Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Docs README": {
+      "main": [
+        [
+          {
+            "node": "Prepare Question Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Question Context": {
+      "main": [
+        [
+          {
+            "node": "Claude Question (Initial)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Question (Initial)": {
+      "main": [
+        [
+          {
+            "node": "Needs Tool Call?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Tool Call?": {
+      "main": [
+        [
+          {
+            "node": "Extract Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Question Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Fetch Requested Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Requested Doc": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tool Result": {
+      "main": [
+        [
+          {
+            "node": "Claude Question (Continue)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Question (Continue)": {
+      "main": [
+        [
+          {
+            "node": "Format Question Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Question Response": {
+      "main": [
+        [
+          {
+            "node": "Post Question Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
