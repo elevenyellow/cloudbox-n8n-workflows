@@ -108,7 +108,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const headers = $input.first().json.headers || {};\nconst body = $input.first().json.body;\nconst event = body.event || {};\n\n// Ignore Slack retries\nif (headers['x-slack-retry-num']) {\n  return [];\n}\n\n// Ignore bot messages to prevent loops\nif (event.bot_id || event.subtype === 'bot_message') {\n  return [];\n}\n\nconst eventType = event.type;\nconst isThreadReply = event.thread_ts && event.thread_ts !== event.ts;\nconst isReaction = eventType === 'reaction_added';\nconst isDM = event.channel_type === 'im';\nconst hasBotMention = (event.text || '').includes('<@');\n\n// Extract message text and remove bot mention\nlet text = (event.text || '').trim();\nconst textLower = text.toLowerCase().replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Determine event category\nlet category = 'unknown';\nlet command = null;\n\nif (isReaction && event.reaction === 'white_check_mark') {\n  category = 'resolve_decision';\n} else if (isThreadReply) {\n  category = 'thread_message';\n} else if (textLower.includes('decisions') || textLower.includes('decisiones')) {\n  category = 'command';\n  command = 'decisions';\n} else if (textLower.includes('help') || textLower.includes('ayuda')) {\n  category = 'command';\n  command = 'help';\n} else if (isDM || hasBotMention) {\n  // General question - DM or mention that's not a specific command\n  category = 'general_question';\n}\n\nreturn [{\n  json: {\n    category,\n    command,\n    channel: event.channel || event.item?.channel,\n    user: event.user,\n    text: text,\n    thread_ts: event.thread_ts || event.ts,\n    message_ts: event.ts,\n    reaction: event.reaction,\n    item_ts: event.item?.ts,\n    event_type: eventType,\n    is_dm: isDM\n  }\n}];"
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst body = $input.first().json.body;\nconst event = body.event || {};\n\n// Ignore Slack retries\nif (headers['x-slack-retry-num']) {\n  return [];\n}\n\n// Ignore bot messages to prevent loops\nif (event.bot_id || event.subtype === 'bot_message') {\n  return [];\n}\n\nconst eventType = event.type;\nconst isThreadReply = event.thread_ts && event.thread_ts !== event.ts;\nconst isReaction = eventType === 'reaction_added';\nconst isDM = event.channel_type === 'im';\nconst hasBotMention = (event.text || '').includes('<@');\n\n// Extract message text and remove bot mention\nlet text = (event.text || '').trim();\nconst textLower = text.toLowerCase().replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Determine event category\nlet category = 'unknown';\nlet command = null;\n\nif (isReaction && event.reaction === 'white_check_mark') {\n  category = 'resolve_decision';\n} else if (isThreadReply && !isDM) {\n  // Thread reply in channel - could be decision discussion or question followup\n  category = 'thread_message';\n} else if (textLower.includes('decisions') || textLower.includes('decisiones')) {\n  category = 'command';\n  command = 'decisions';\n} else if (textLower.includes('help') || textLower.includes('ayuda')) {\n  category = 'command';\n  command = 'help';\n} else if (isDM || hasBotMention) {\n  // General question - DM (including thread replies in DM) or mention\n  category = 'general_question';\n}\n\nreturn [{\n  json: {\n    category,\n    command,\n    channel: event.channel || event.item?.channel,\n    user: event.user,\n    text: text,\n    thread_ts: event.thread_ts || event.ts,\n    message_ts: event.ts,\n    reaction: event.reaction,\n    item_ts: event.item?.ts,\n    event_type: eventType,\n    is_dm: isDM,\n    is_thread_reply: isThreadReply\n  }\n}];"
       },
       "id": "parse-event",
       "name": "Parse Event",
@@ -325,7 +325,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst openDecisions = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  let content;\n  \n  if (item.binary && item.binary.data) {\n    try {\n      const binaryData = await this.helpers.getBinaryDataBuffer(i, 'data');\n      content = binaryData.toString('utf8');\n    } catch (e) {\n      continue;\n    }\n  } else {\n    continue;\n  }\n  \n  const fmMatch = content.match(/^---\\n([\\s\\S]*?)\\n---/);\n  if (!fmMatch) continue;\n  \n  const lines = fmMatch[1].split('\\n');\n  const frontmatter = {};\n  for (const line of lines) {\n    const colonIndex = line.indexOf(':');\n    if (colonIndex > 0) {\n      const key = line.slice(0, colonIndex).trim();\n      const value = line.slice(colonIndex + 1).trim().replace(/^[\"']|[\"']$/g, '');\n      frontmatter[key] = value;\n    }\n  }\n  \n  if (frontmatter.status === 'open') {\n    openDecisions.push({\n      id: frontmatter.id || 'unknown',\n      title: frontmatter.title || 'Sin título',\n      created: frontmatter.created || '',\n      path: item.json.path\n    });\n  }\n}\n\nreturn [{ json: { openDecisions, count: openDecisions.length } }];"
+        "jsCode": "const items = $input.all();\nconst openDecisions = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  let content;\n  \n  if (item.binary && item.binary.data) {\n    try {\n      const binaryData = await this.helpers.getBinaryDataBuffer(i, 'data');\n      content = binaryData.toString('utf8');\n    } catch (e) {\n      continue;\n    }\n  } else {\n    continue;\n  }\n  \n  const fmMatch = content.match(/^---\\n([\\s\\S]*?)\\n---/);\n  if (!fmMatch) continue;\n  \n  const lines = fmMatch[1].split('\\n');\n  const frontmatter = {};\n  for (const line of lines) {\n    const colonIndex = line.indexOf(':');\n    if (colonIndex > 0) {\n      const key = line.slice(0, colonIndex).trim();\n      const value = line.slice(colonIndex + 1).trim().replace(/^[\"']|[\"']$/g, '');\n      frontmatter[key] = value;\n    }\n  }\n  \n  if (frontmatter.status === 'open') {\n    openDecisions.push({\n      id: frontmatter.id || 'unknown',\n      title: frontmatter.title || 'Sin t\u00edtulo',\n      created: frontmatter.created || '',\n      path: item.json.path\n    });\n  }\n}\n\nreturn [{ json: { openDecisions, count: openDecisions.length } }];"
       },
       "id": "filter-open-decisions",
       "name": "Filter Open Decisions",
@@ -338,7 +338,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { openDecisions, count } = $input.first().json;\nconst channel = $('Parse Event').first().json.channel;\n\nlet text, blocks;\n\nif (count === 0) {\n  text = 'No hay decisiones abiertas';\n  blocks = [\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: '*No hay decisiones abiertas* :white_check_mark:'\n      }\n    }\n  ];\n} else {\n  text = `Hay ${count} decisión(es) abierta(s)`;\n  blocks = [\n    {\n      type: 'header',\n      text: {\n        type: 'plain_text',\n        text: `Decisiones Abiertas (${count})`,\n        emoji: true\n      }\n    }\n  ];\n  \n  for (const decision of openDecisions) {\n    blocks.push({\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*${decision.id}*: ${decision.title}`\n      },\n      accessory: {\n        type: 'button',\n        text: {\n          type: 'plain_text',\n          text: 'Ver detalle',\n          emoji: true\n        },\n        value: JSON.stringify({ id: decision.id, path: decision.path, title: decision.title }),\n        action_id: `view_decision_${decision.id}`\n      }\n    });\n  }\n}\n\nreturn [{ json: { channel, text, blocks } }];"
+        "jsCode": "const { openDecisions, count } = $input.first().json;\nconst channel = $('Parse Event').first().json.channel;\n\nlet text, blocks;\n\nif (count === 0) {\n  text = 'No hay decisiones abiertas';\n  blocks = [\n    {\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: '*No hay decisiones abiertas* :white_check_mark:'\n      }\n    }\n  ];\n} else {\n  text = `Hay ${count} decisi\u00f3n(es) abierta(s)`;\n  blocks = [\n    {\n      type: 'header',\n      text: {\n        type: 'plain_text',\n        text: `Decisiones Abiertas (${count})`,\n        emoji: true\n      }\n    }\n  ];\n  \n  for (const decision of openDecisions) {\n    blocks.push({\n      type: 'section',\n      text: {\n        type: 'mrkdwn',\n        text: `*${decision.id}*: ${decision.title}`\n      },\n      accessory: {\n        type: 'button',\n        text: {\n          type: 'plain_text',\n          text: 'Ver detalle',\n          emoji: true\n        },\n        value: JSON.stringify({ id: decision.id, path: decision.path, title: decision.title }),\n        action_id: `view_decision_${decision.id}`\n      }\n    });\n  }\n}\n\nreturn [{ json: { channel, text, blocks } }];"
       },
       "id": "build-decisions-response",
       "name": "Build Decisions Response",
@@ -351,7 +351,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const channel = $('Parse Event').first().json.channel;\n\nconst text = 'Comandos disponibles';\nconst blocks = [\n  {\n    type: 'header',\n    text: {\n      type: 'plain_text',\n      text: 'Akne - Ayuda',\n      emoji: true\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '*Comandos disponibles:*'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• `decisions` o `decisiones` - Lista las decisiones de negocio abiertas'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• `help` o `ayuda` - Muestra este mensaje de ayuda'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• Responde en el hilo de una decisión para discutirla conmigo'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '• Pon :white_check_mark: en un hilo para cerrar la decisión'\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'context',\n    elements: [\n      {\n        type: 'mrkdwn',\n        text: 'Puedes mencionarme en cualquier canal o enviarme un mensaje directo'\n      }\n    ]\n  }\n];\n\nreturn [{ json: { channel, text, blocks } }];"
+        "jsCode": "const channel = $('Parse Event').first().json.channel;\n\nconst text = 'Comandos disponibles';\nconst blocks = [\n  {\n    type: 'header',\n    text: {\n      type: 'plain_text',\n      text: 'Akne - Ayuda',\n      emoji: true\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '*Comandos disponibles:*'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '\u2022 `decisions` o `decisiones` - Lista las decisiones de negocio abiertas'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '\u2022 `help` o `ayuda` - Muestra este mensaje de ayuda'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '\u2022 Responde en el hilo de una decisi\u00f3n para discutirla conmigo'\n    }\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '\u2022 Pon :white_check_mark: en un hilo para cerrar la decisi\u00f3n'\n    }\n  },\n  {\n    type: 'divider'\n  },\n  {\n    type: 'context',\n    elements: [\n      {\n        type: 'mrkdwn',\n        text: 'Puedes mencionarme en cualquier canal o enviarme un mensaje directo'\n      }\n    ]\n  }\n];\n\nreturn [{ json: { channel, text, blocks } }];"
       },
       "id": "build-help-response",
       "name": "Build Help Response",
@@ -531,7 +531,7 @@
         "nodeCredentialType": "slackApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, thread_ts: $json.ts, text: 'Hilo de discusión abierto. Pon :white_check_mark: en el mensaje principal cuando se cierre la decisión.' }) }}",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, thread_ts: $json.ts, text: 'Hilo de discusi\u00f3n abierto. Pon :white_check_mark: en el mensaje principal cuando se cierre la decisi\u00f3n.' }) }}",
         "options": {}
       },
       "id": "start-thread",
@@ -655,7 +655,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: 'Eres Akne, un asistente para ayudar a tomar decisiones de negocio en un proyecto de teledermatología.\\n\\nEstás participando en una discusión sobre la siguiente decisión:\\n\\n' + $json.decision_context + '\\n\\n---\\n\\nTu rol es:\\n1. Ayudar a analizar las opciones presentadas\\n2. Hacer preguntas clarificadoras si es necesario\\n3. Ofrecer perspectivas adicionales basadas en el contexto\\n4. NO tomar la decisión - eso le corresponde al equipo\\n5. Ser conciso y directo en tus respuestas\\n6. Responder en español\\n\\nEl usuario acaba de escribir:\\n' + $json.latest_message }] }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: 'Eres Akne, un asistente para ayudar a tomar decisiones de negocio en un proyecto de teledermatolog\u00eda.\\n\\nEst\u00e1s participando en una discusi\u00f3n sobre la siguiente decisi\u00f3n:\\n\\n' + $json.decision_context + '\\n\\n---\\n\\nTu rol es:\\n1. Ayudar a analizar las opciones presentadas\\n2. Hacer preguntas clarificadoras si es necesario\\n3. Ofrecer perspectivas adicionales basadas en el contexto\\n4. NO tomar la decisi\u00f3n - eso le corresponde al equipo\\n5. Ser conciso y directo en tus respuestas\\n6. Responder en espa\u00f1ol\\n\\nEl usuario acaba de escribir:\\n' + $json.latest_message }] }) }}",
         "options": {}
       },
       "id": "claude-respond",
@@ -800,7 +800,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const fileData = $('Fetch Decision for Resolve').first().json;\nconst threadData = $input.first().json;\n\n// Decode decision content from base64\nconst decisionContent = Buffer.from(fileData.content, 'base64').toString('utf8');\n\n// Build conversation from thread messages\nconst messages = threadData.messages || [];\nconst conversation = messages.map(m => (m.bot_id ? '[Bot]' : '[Usuario]') + ': ' + m.text).join('\\n');\n\n// Build the prompt for Claude\nconst prompt = `Eres un asistente que documenta decisiones de negocio.\n\nA continuación tienes el contenido de un documento de decisión y la conversación del equipo en Slack donde se discutió y resolvió.\n\n## Documento de decisión:\n${decisionContent}\n\n## Conversación en Slack:\n${conversation}\n\n---\n\nBasándote en la conversación, genera un resumen conciso (2-4 frases) de la decisión tomada para la sección \"## Decisión\" del documento.\n\nFormato requerido:\n- Primera línea: La opción elegida y una breve justificación\n- Segunda línea: Fecha en formato YYYY-MM-DD\n- Si se menciona dónde queda reflejada, incluir el enlace\n\nResponde SOLO con el texto para la sección Decisión, sin explicaciones adicionales.`;\n\nreturn [{\n  json: {\n    prompt,\n    decisionContent,\n    conversation\n  }\n}];"
+        "jsCode": "const fileData = $('Fetch Decision for Resolve').first().json;\nconst threadData = $input.first().json;\n\n// Decode decision content from base64\nconst decisionContent = Buffer.from(fileData.content, 'base64').toString('utf8');\n\n// Build conversation from thread messages\nconst messages = threadData.messages || [];\nconst conversation = messages.map(m => (m.bot_id ? '[Bot]' : '[Usuario]') + ': ' + m.text).join('\\n');\n\n// Build the prompt for Claude\nconst prompt = `Eres un asistente que documenta decisiones de negocio.\n\nA continuaci\u00f3n tienes el contenido de un documento de decisi\u00f3n y la conversaci\u00f3n del equipo en Slack donde se discuti\u00f3 y resolvi\u00f3.\n\n## Documento de decisi\u00f3n:\n${decisionContent}\n\n## Conversaci\u00f3n en Slack:\n${conversation}\n\n---\n\nBas\u00e1ndote en la conversaci\u00f3n, genera un resumen conciso (2-4 frases) de la decisi\u00f3n tomada para la secci\u00f3n \"## Decisi\u00f3n\" del documento.\n\nFormato requerido:\n- Primera l\u00ednea: La opci\u00f3n elegida y una breve justificaci\u00f3n\n- Segunda l\u00ednea: Fecha en formato YYYY-MM-DD\n- Si se menciona d\u00f3nde queda reflejada, incluir el enlace\n\nResponde SOLO con el texto para la secci\u00f3n Decisi\u00f3n, sin explicaciones adicionales.`;\n\nreturn [{\n  json: {\n    prompt,\n    decisionContent,\n    conversation\n  }\n}];"
       },
       "id": "prepare-summary-prompt",
       "name": "Prepare Summary Prompt",
@@ -848,7 +848,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const fileData = $('Fetch Decision for Resolve').first().json;\nconst decisionData = $('Lookup Decision by Reaction').first().json;\nconst eventData = $('Parse Event').first().json;\nconst summaryResponse = $input.first().json;\n\n// Decode content from base64\nconst content = Buffer.from(fileData.content, 'base64').toString('utf8');\n\n// Get the decision summary from Claude\nconst decisionSummary = summaryResponse.content[0].text;\n\n// Update status from open to decided\nlet updatedContent = content.replace(/^(status:\\s*)open/m, '$1decided');\n\n// Replace the Decisión section\nconst decisionSectionRegex = /(## Decisión\\n)[\\s\\S]*?(?=\\n## |\\n<!-- |$)/;\nif (decisionSectionRegex.test(updatedContent)) {\n  updatedContent = updatedContent.replace(decisionSectionRegex, `$1${decisionSummary}\\n\\n`);\n} else {\n  // If no Decisión section, append it\n  updatedContent += `\\n## Decisión\\n${decisionSummary}\\n`;\n}\n\n// Extract title for confirmation message\nconst titleMatch = content.match(/^title:\\s*[\"']?(.+?)[\"']?$/m);\nconst title = titleMatch ? titleMatch[1] : decisionData.decision_id;\n\n// Get file SHA from GitHub response\nconst fileSha = fileData.sha;\n\n// Encode updated content to base64 for GitHub API\nconst updatedContentBase64 = Buffer.from(updatedContent).toString('base64');\n\nreturn [{\n  json: {\n    decision_id: decisionData.decision_id,\n    file_path: decisionData.file_path,\n    file_sha: fileSha,\n    title: title,\n    decision_summary: decisionSummary,\n    original_content: content,\n    updated_content: updatedContent,\n    updated_content_base64: updatedContentBase64,\n    channel: eventData.channel,\n    thread_ts: decisionData.slack_thread_ts,\n    user_id: eventData.user\n  }\n}];"
+        "jsCode": "const fileData = $('Fetch Decision for Resolve').first().json;\nconst decisionData = $('Lookup Decision by Reaction').first().json;\nconst eventData = $('Parse Event').first().json;\nconst summaryResponse = $input.first().json;\n\n// Decode content from base64\nconst content = Buffer.from(fileData.content, 'base64').toString('utf8');\n\n// Get the decision summary from Claude\nconst decisionSummary = summaryResponse.content[0].text;\n\n// Update status from open to decided\nlet updatedContent = content.replace(/^(status:\\s*)open/m, '$1decided');\n\n// Replace the Decisi\u00f3n section\nconst decisionSectionRegex = /(## Decisi\u00f3n\\n)[\\s\\S]*?(?=\\n## |\\n<!-- |$)/;\nif (decisionSectionRegex.test(updatedContent)) {\n  updatedContent = updatedContent.replace(decisionSectionRegex, `$1${decisionSummary}\\n\\n`);\n} else {\n  // If no Decisi\u00f3n section, append it\n  updatedContent += `\\n## Decisi\u00f3n\\n${decisionSummary}\\n`;\n}\n\n// Extract title for confirmation message\nconst titleMatch = content.match(/^title:\\s*[\"']?(.+?)[\"']?$/m);\nconst title = titleMatch ? titleMatch[1] : decisionData.decision_id;\n\n// Get file SHA from GitHub response\nconst fileSha = fileData.sha;\n\n// Encode updated content to base64 for GitHub API\nconst updatedContentBase64 = Buffer.from(updatedContent).toString('base64');\n\nreturn [{\n  json: {\n    decision_id: decisionData.decision_id,\n    file_path: decisionData.file_path,\n    file_sha: fileSha,\n    title: title,\n    decision_summary: decisionSummary,\n    original_content: content,\n    updated_content: updatedContent,\n    updated_content_base64: updatedContentBase64,\n    channel: eventData.channel,\n    thread_ts: decisionData.slack_thread_ts,\n    user_id: eventData.user\n  }\n}];"
       },
       "id": "update-decision-status",
       "name": "Update Decision Status",
@@ -965,7 +965,7 @@
         "nodeCredentialType": "githubApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ title: 'Resolve decision ' + $('Update Decision Status').first().json.decision_id, body: 'Resolución de la decisión **' + $('Update Decision Status').first().json.decision_id + '**: ' + $('Update Decision Status').first().json.title + '\\n\\n**Decisión:**\\n' + $('Update Decision Status').first().json.decision_summary + '\\n\\nCerrada desde Slack por ' + $('Get Slack User').first().json.user.real_name, head: 'resolve/' + $('Update Decision Status').first().json.decision_id, base: 'main' }) }}",
+        "jsonBody": "={{ JSON.stringify({ title: 'Resolve decision ' + $('Update Decision Status').first().json.decision_id, body: 'Resoluci\u00f3n de la decisi\u00f3n **' + $('Update Decision Status').first().json.decision_id + '**: ' + $('Update Decision Status').first().json.title + '\\n\\n**Decisi\u00f3n:**\\n' + $('Update Decision Status').first().json.decision_summary + '\\n\\nCerrada desde Slack por ' + $('Get Slack User').first().json.user.real_name, head: 'resolve/' + $('Update Decision Status').first().json.decision_id, base: 'main' }) }}",
         "options": {}
       },
       "id": "create-pr",
@@ -991,7 +991,7 @@
         "nodeCredentialType": "slackApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ channel: $('Update Decision Status').first().json.channel, thread_ts: $('Update Decision Status').first().json.thread_ts, text: ':white_check_mark: Decisión *' + $('Update Decision Status').first().json.decision_id + '* resuelta. PR creado: ' + $json.html_url }) }}",
+        "jsonBody": "={{ JSON.stringify({ channel: $('Update Decision Status').first().json.channel, thread_ts: $('Update Decision Status').first().json.thread_ts, text: ':white_check_mark: Decisi\u00f3n *' + $('Update Decision Status').first().json.decision_id + '* resuelta. PR creado: ' + $json.html_url }) }}",
         "options": {}
       },
       "id": "post-resolution-confirmation",
@@ -1041,7 +1041,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $('Route Event').first().json;\nconst readmeResponse = $input.first().json;\n\n// Decode README content\nconst readmeContent = Buffer.from(readmeResponse.content, 'base64').toString('utf-8');\n\n// Clean question text (remove bot mention)\nconst question = input.text.replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Build system prompt with Slack formatting instructions\nconst systemPrompt = `Eres Akne, el mentor técnico del proyecto AKNE - una plataforma de teledermatología. Tienes un conocimiento profundo del proyecto y su historia.\n\nTu personalidad:\n- Guía experta y paciente\n- Conoces el contexto histórico de cada decisión\n- Explicas el 'por qué' detrás de las cosas\n- Usas analogías cuando ayudan a clarificar\n- Respondes en el idioma de la pregunta (español o inglés)\n- Eres conciso pero completo\n\nFORMATO DE RESPUESTA (MUY IMPORTANTE):\n- Usa formato Slack, NO markdown estándar\n- Para negrita: *texto* (un solo asterisco a cada lado)\n- Para cursiva: _texto_\n- Para código inline: \\`código\\`\n- Para bloques de código: \\`\\`\\`código\\`\\`\\`\n- NO uses ## o # para títulos, usa *Título* en negrita seguido de nueva línea\n- NO uses **texto** para negrita, usa *texto*\n- Usa bullet points con • o -\n- Usa líneas vacías para separar secciones\n\nTienes acceso a la documentación del proyecto. Aquí está el mapa de docs:\n\n${readmeContent}\n\nPuedes usar la tool 'read_doc' para leer cualquier archivo de docs/ cuando necesites más contexto. Los paths relativos empiezan desde la raíz del repo (ej: docs/strategy/vision.md).`;\n\n// Build Claude request body\nconst claudeBody = {\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 4096,\n  system: systemPrompt,\n  tools: [{\n    name: 'read_doc',\n    description: 'Lee un archivo de documentación del repo. Usa paths como docs/strategy/vision.md, docs/product/actors.md, etc.',\n    input_schema: {\n      type: 'object',\n      properties: {\n        path: {\n          type: 'string',\n          description: 'Path del archivo relativo a la raíz del repo, ej: docs/strategy/vision.md'\n        }\n      },\n      required: ['path']\n    }\n  }],\n  messages: [{\n    role: 'user',\n    content: question\n  }]\n};\n\nreturn [{\n  json: {\n    channel: input.channel,\n    thread_ts: input.message_ts,\n    user: input.user,\n    question: question,\n    readme_content: readmeContent,\n    claude_body: claudeBody\n  }\n}];"
+        "jsCode": "// Try to get input from thread context first, then fall back to Route Event\nlet input;\nlet threadHistory = [];\n\ntry {\n  input = $('Prepare Thread Context').first().json;\n  threadHistory = input.thread_history || [];\n} catch (e) {\n  input = $('Route Event').first().json;\n}\n\nconst readmeResponse = $input.first().json;\n\n// Decode README content\nconst readmeContent = Buffer.from(readmeResponse.content, 'base64').toString('utf-8');\n\n// Clean question text (remove bot mention)\nconst question = (input.current_question || input.text || '').replace(/<@[A-Z0-9]+>/gi, '').trim();\n\n// Build system prompt with Slack formatting instructions\nconst systemPrompt = `Eres Akne, el mentor t\u00e9cnico del proyecto AKNE - una plataforma de teledermatolog\u00eda. Tienes un conocimiento profundo del proyecto y su historia.\n\nTu personalidad:\n- Gu\u00eda experta y paciente\n- Conoces el contexto hist\u00f3rico de cada decisi\u00f3n\n- Explicas el 'por qu\u00e9' detr\u00e1s de las cosas\n- Usas analog\u00edas cuando ayudan a clarificar\n- Respondes en el idioma de la pregunta (espa\u00f1ol o ingl\u00e9s)\n- Eres conciso pero completo\n\nFORMATO DE RESPUESTA (MUY IMPORTANTE):\n- Usa formato Slack, NO markdown est\u00e1ndar\n- Para negrita: *texto* (un solo asterisco a cada lado)\n- Para cursiva: _texto_\n- Para c\u00f3digo inline: \\`c\u00f3digo\\`\n- Para bloques de c\u00f3digo: \\`\\`\\`c\u00f3digo\\`\\`\\`\n- NO uses ## o # para t\u00edtulos, usa *T\u00edtulo* en negrita seguido de nueva l\u00ednea\n- NO uses **texto** para negrita, usa *texto*\n- Usa bullet points con \u2022 o -\n- Usa l\u00edneas vac\u00edas para separar secciones\n\nTienes acceso a la documentaci\u00f3n del proyecto. Aqu\u00ed est\u00e1 el mapa de docs:\n\n${readmeContent}\n\nPuedes usar la tool 'read_doc' para leer cualquier archivo de docs/ cuando necesites m\u00e1s contexto. Los paths relativos empiezan desde la ra\u00edz del repo (ej: docs/strategy/vision.md).`;\n\n// Build messages array - include thread history if available\nconst messages = [\n  ...threadHistory,\n  { role: 'user', content: question }\n];\n\n// Build Claude request body\nconst claudeBody = {\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 4096,\n  system: systemPrompt,\n  tools: [{\n    name: 'read_doc',\n    description: 'Lee un archivo de documentaci\u00f3n del repo. Usa paths como docs/strategy/vision.md, docs/product/actors.md, etc.',\n    input_schema: {\n      type: 'object',\n      properties: {\n        path: {\n          type: 'string',\n          description: 'Path del archivo relativo a la ra\u00edz del repo, ej: docs/strategy/vision.md'\n        }\n      },\n      required: ['path']\n    }\n  }],\n  messages: messages\n};\n\nreturn [{\n  json: {\n    channel: input.channel,\n    thread_ts: input.thread_ts || input.message_ts,\n    user: input.user,\n    question: question,\n    readme_content: readmeContent,\n    claude_body: claudeBody,\n    has_history: threadHistory.length > 0\n  }\n}];"
       },
       "id": "prepare-question-context",
       "name": "Prepare Question Context",
@@ -1365,6 +1365,42 @@
           "name": "Anthropic"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://slack.com/api/conversations.replies?channel={{ $json.channel }}&ts={{ $json.thread_ts }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "options": {}
+      },
+      "id": "fetch-thread-history",
+      "name": "Fetch Thread History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        500
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "Yok3qXnwLx1k35zk",
+          "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Route Event').first().json;\nconst threadData = $input.first().json;\n\n// Bot user ID for Akne\nconst BOT_USER_ID = 'U08TRU0H9NZ';\n\nif (!threadData.ok || !threadData.messages) {\n  // Can't fetch thread, skip\n  return [];\n}\n\nconst messages = threadData.messages;\n\n// Check if bot participated in this thread\nconst botParticipated = messages.some(m => m.user === BOT_USER_ID || m.bot_id);\n\nif (!botParticipated) {\n  // Bot hasn't been in this thread, ignore\n  return [];\n}\n\n// Convert thread history to conversation format for Claude\nconst conversation = messages\n  .filter(m => !m.subtype) // Skip system messages\n  .map(m => {\n    const isBot = m.user === BOT_USER_ID || m.bot_id;\n    const text = (m.text || '').replace(/<@[A-Z0-9]+>/gi, '').trim();\n    return {\n      role: isBot ? 'assistant' : 'user',\n      content: text\n    };\n  })\n  .filter(m => m.content); // Skip empty messages\n\n// Remove the last message if it's from user (that's the current question)\nconst lastMsg = conversation[conversation.length - 1];\nlet currentQuestion = input.text.replace(/<@[A-Z0-9]+>/gi, '').trim();\nif (lastMsg && lastMsg.role === 'user') {\n  conversation.pop();\n}\n\nreturn [{\n  json: {\n    ...input,\n    thread_history: conversation,\n    current_question: currentQuestion\n  }\n}];"
+      },
+      "id": "prepare-thread-context",
+      "name": "Prepare Thread Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        500
+      ]
     }
   ],
   "connections": {
@@ -1437,7 +1473,7 @@
         ],
         [
           {
-            "node": "Lookup Thread Decision",
+            "node": "Fetch Thread History",
             "type": "main",
             "index": 0
           }
@@ -1650,7 +1686,7 @@
       "main": [
         [
           {
-            "node": "Prepare Claude Context",
+            "node": "Prepare Thread Context",
             "type": "main",
             "index": 0
           }
@@ -1963,6 +1999,17 @@
         [
           {
             "node": "Format Question Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Thread Context": {
+      "main": [
+        [
+          {
+            "node": "Fetch Docs README",
             "type": "main",
             "index": 0
           }
