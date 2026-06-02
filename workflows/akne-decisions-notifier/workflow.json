@@ -1164,7 +1164,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const toolCall = $('Extract Tool Call').first().json;\nconst docResponse = $input.first().json;\nconst context = $('Prepare Question Context').first().json;\nconst previousResponse = toolCall.previous_response;\n\n// Decode doc content\nlet docContent;\ntry {\n  docContent = Buffer.from(docResponse.content, 'base64').toString('utf-8');\n} catch (e) {\n  docContent = 'Error: Could not read file at ' + toolCall.file_path;\n}\n\n// Build messages array with tool result\nconst messages = [\n  { role: 'user', content: context.question },\n  { role: 'assistant', content: previousResponse.content },\n  { role: 'user', content: [{\n    type: 'tool_result',\n    tool_use_id: toolCall.tool_use_id,\n    content: docContent\n  }]}\n];\n\n// Build system prompt\nconst systemPrompt = `Eres Akne, el mentor técnico del proyecto AKNE - una plataforma de teledermatología. Tienes un conocimiento profundo del proyecto y su historia.\n\nTu personalidad:\n- Guía experta y paciente\n- Conoces el contexto histórico de cada decisión\n- Explicas el 'por qué' detrás de las cosas\n- Usas analogías cuando ayudan a clarificar\n- Respondes en el idioma de la pregunta (español o inglés)\n- Eres conciso pero completo\n\nTienes acceso a la documentación del proyecto. Aquí está el mapa de docs:\n\n${context.readme_content}\n\nResponde de forma útil y estructurada. Usa formato Slack (*bold*, _italic_, \\`\\`\\`code\\`\\`\\`).`;\n\n// Build Claude request body\nconst claudeBody = {\n  model: 'claude-sonnet-4-20250514',\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: messages\n};\n\nreturn [{\n  json: {\n    channel: context.channel,\n    thread_ts: context.thread_ts,\n    claude_body: claudeBody\n  }\n}];"
+        "jsCode": "const toolCall = $('Extract Tool Call').first().json;\nconst docResponse = $input.first().json;\nconst context = $('Prepare Question Context').first().json;\nconst previousResponse = toolCall.previous_response;\n\n// Decode doc content\nlet docContent;\ntry {\n  docContent = Buffer.from(docResponse.content, 'base64').toString('utf-8');\n} catch (e) {\n  docContent = 'Error: Could not read file at ' + toolCall.file_path;\n}\n\n// Build messages array with tool result\nconst messages = [\n  { role: 'user', content: context.question },\n  { role: 'assistant', content: previousResponse.content },\n  { role: 'user', content: [{\n    type: 'tool_result',\n    tool_use_id: toolCall.tool_use_id,\n    content: docContent\n  }]}\n];\n\n// Reuse the claude_body from context which has the tools\nconst claudeBody = {\n  ...context.claude_body,\n  messages: messages\n};\n\nreturn [{\n  json: {\n    channel: context.channel,\n    thread_ts: context.thread_ts,\n    claude_body: claudeBody\n  }\n}];"
       },
       "id": "prepare-tool-result",
       "name": "Prepare Tool Result",
@@ -1212,7 +1212,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const response = $input.first().json;\nlet context;\n\n// Get context from appropriate source\ntry {\n  context = $('Prepare Tool Result').first().json;\n} catch (e) {\n  context = $('Prepare Question Context').first().json;\n}\n\n// Extract text response\nconst textBlock = response.content.find(c => c.type === 'text');\nlet responseText = textBlock ? textBlock.text : 'No pude generar una respuesta.';\n\n// Convert any remaining markdown to Slack format\nresponseText = responseText\n  .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')  // **bold** -> *bold*\n  .replace(/^##\\s+(.+)$/gm, '*$1*')      // ## Title -> *Title*\n  .replace(/^#\\s+(.+)$/gm, '*$1*');       // # Title -> *Title*\n\nreturn [{\n  json: {\n    channel: context.channel,\n    thread_ts: context.thread_ts,\n    response: responseText\n  }\n}];"
+        "jsCode": "const response = $input.first().json;\nlet context;\nlet claude_body;\n\n// Get context from appropriate source - check loop path first\ntry {\n  // Try loop path first (Prepare Next Tool Result)\n  context = $('Prepare Next Tool Result').first().json;\n  claude_body = context.claude_body;\n} catch (e) {\n  try {\n    // Then try first tool call path\n    context = $('Prepare Tool Result').first().json;\n    claude_body = context.claude_body;\n  } catch (e2) {\n    // Finally try initial path (no tool calls yet)\n    context = $('Prepare Question Context').first().json;\n    claude_body = context.claude_body;\n  }\n}\n\n// Check if Claude wants to use another tool\nif (response.stop_reason === 'tool_use') {\n  // Extract tool use for another round\n  const toolUse = response.content.find(c => c.type === 'tool_use');\n  if (toolUse) {\n    return [{\n      json: {\n        needs_another_tool: true,\n        tool_use_id: toolUse.id,\n        tool_name: toolUse.name,\n        file_path: toolUse.input.path,\n        previous_response: response,\n        channel: context.channel,\n        thread_ts: context.thread_ts,\n        claude_body: claude_body\n      }\n    }];\n  }\n}\n\n// Extract text response\nconst textBlock = response.content.find(c => c.type === 'text');\nlet responseText = textBlock ? textBlock.text : 'No pude generar una respuesta.';\n\n// Convert any remaining markdown to Slack format\nresponseText = responseText\n  .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')  // **bold** -> *bold*\n  .replace(/^##\\s+(.+)$/gm, '*$1*')      // ## Title -> *Title*\n  .replace(/^#\\s+(.+)$/gm, '*$1*');       // # Title -> *Title*\n\nreturn [{\n  json: {\n    needs_another_tool: false,\n    channel: context.channel,\n    thread_ts: context.thread_ts,\n    response: responseText\n  }\n}];"
       },
       "id": "format-question-response",
       "name": "Format Question Response",
@@ -1239,13 +1239,124 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
-        800
+        3300,
+        900
       ],
       "credentials": {
         "slackApi": {
           "id": "Yok3qXnwLx1k35zk",
           "name": "Slack Akne Assistant"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "needs-more-tools",
+              "leftValue": "={{ $json.needs_another_tool }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "needs-more-tools",
+      "name": "Needs More Tools?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.github.com/repos/elevenyellow/akne/contents/{{ $json.file_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "id": "fetch-next-doc",
+      "name": "Fetch Next Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        700
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "DG6zdZZItCmtMRqk",
+          "name": "GitHub: akne PAT (native)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevResult = $('Format Question Response').first().json;\nconst docResponse = $input.first().json;\nconst context = $('Prepare Question Context').first().json;\n\n// Decode doc content - handle files vs directories\nlet docContent;\ntry {\n  if (Array.isArray(docResponse)) {\n    // GitHub returned a directory listing\n    const files = docResponse.map(f => f.name + (f.type === 'dir' ? '/' : '')).join('\\n');\n    docContent = `This is a directory. Contents:\\n${files}\\n\\nTry requesting a specific file like ${prevResult.file_path}/README.md`;\n  } else if (docResponse.content) {\n    docContent = Buffer.from(docResponse.content, 'base64').toString('utf-8');\n  } else if (docResponse.message) {\n    // GitHub API error (e.g., Not Found)\n    docContent = 'Error: ' + docResponse.message + ' at path: ' + prevResult.file_path;\n  } else {\n    docContent = 'Error: Could not read file at ' + prevResult.file_path;\n  }\n} catch (e) {\n  docContent = 'Error: Could not read file at ' + prevResult.file_path + ' - ' + e.message;\n}\n\n// Get the previous claude_body and add the new messages\nconst prevBody = prevResult.claude_body;\nconst newMessages = [\n  ...prevBody.messages,\n  { role: 'assistant', content: prevResult.previous_response.content },\n  { role: 'user', content: [{\n    type: 'tool_result',\n    tool_use_id: prevResult.tool_use_id,\n    content: docContent\n  }]}\n];\n\n// Build new Claude request body\nconst claudeBody = {\n  model: prevBody.model,\n  max_tokens: prevBody.max_tokens,\n  system: prevBody.system,\n  tools: prevBody.tools,\n  messages: newMessages\n};\n\nreturn [{\n  json: {\n    channel: context.channel,\n    thread_ts: context.thread_ts,\n    claude_body: claudeBody\n  }\n}];"
+      },
+      "id": "prepare-next-tool-result",
+      "name": "Prepare Next Tool Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claude_body) }}",
+        "options": {}
+      },
+      "id": "claude-question-loop",
+      "name": "Claude Question (Loop)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3740,
+        700
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "TvqkipfDNVuQ9rHC",
+          "name": "Anthropic"
         }
       }
     }
@@ -1794,7 +1905,58 @@
       "main": [
         [
           {
+            "node": "Needs More Tools?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs More Tools?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Next Doc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Post Question Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Next Doc": {
+      "main": [
+        [
+          {
+            "node": "Prepare Next Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Next Tool Result": {
+      "main": [
+        [
+          {
+            "node": "Claude Question (Loop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Question (Loop)": {
+      "main": [
+        [
+          {
+            "node": "Format Question Response",
             "type": "main",
             "index": 0
           }
